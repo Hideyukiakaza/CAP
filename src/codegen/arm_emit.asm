@@ -35,7 +35,8 @@ section .text
 
 %macro EMIT_ARM 1
     mov rdi, r13
-    mov esi, %1
+    mov r8d, %1
+    mov esi, r8d
     call emit_dword
 %endmacro
 
@@ -93,11 +94,12 @@ arm_emit_program:
     ; Patch bl main in _start (at word 0)
     mov rax, [armstate + ArmState.fn_main_off]
     sar rax, 2               ; convert to word offset
-    and rax, 0x03FFFFFF
-    or rax, 0x94000000
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
     mov rdi, r13
     xor rsi, rsi
-    mov rdx, rax
+    mov edx, eax
     call patch_dword
 
     pop r13
@@ -164,10 +166,11 @@ arm_emit_fn:
     ; 0xF80003A0 | (( -rcx & 0x1FF) << 12) | r10
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF80003A0
-    or rax, r10
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF80003A0
+    or eax, r8d
+    or eax, r10d
     EMIT_ARM eax
 
     inc r10
@@ -183,7 +186,7 @@ arm_emit_fn:
     ; mov x0, #0
     EMIT_ARM 0xD2800000
     ; add sp, sp, #256 -> 0x910403FF
-    EMIT_ARM 0xD10403FF
+    EMIT_ARM 0x910403FF
     ; ldp x29, x30, [sp], #48 -> 0xA8C37BFD
     EMIT_ARM 0xA8C37BFD
     ; ret -> 0xD65F03C0
@@ -263,9 +266,10 @@ arm_emit_stmt:
     ; stur x0, [x29, #-off]
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF80003A0
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF80003A0
+    or eax, r8d
     EMIT_ARM eax
     jmp .next
 
@@ -309,12 +313,13 @@ arm_emit_stmt:
     push r10
     sub rax, rbx
     sar rax, 2               ; word offset
-    and rax, 0x7FFFF
-    shl rax, 5
-    or rax, 0xB4000000
+    and eax, 0x7FFFF
+    shl eax, 5
+    mov r8d, 0xB4000000
+    or eax, r8d
     mov rdi, r13
     mov rsi, rbx
-    mov rdx, rax
+    mov edx, eax
     call patch_dword
 
     ; else block
@@ -329,11 +334,12 @@ arm_emit_stmt:
     pop r10
     sub rax, r10
     sar rax, 2
-    and rax, 0x03FFFFFF
-    or rax, 0x14000000
+    and eax, 0x03FFFFFF
+    mov r8d, 0x14000000
+    or eax, r8d
     mov rdi, r13
     mov rsi, r10
-    mov rdx, rax
+    mov edx, eax
     call patch_dword
     jmp .next
 
@@ -358,20 +364,22 @@ arm_emit_stmt:
     mov rax, rbx
     sub rax, [r13 + 16]
     sar rax, 2
-    and rax, 0x03FFFFFF
-    or rax, 0x14000000
+    and eax, 0x03FFFFFF
+    mov r8d, 0x14000000
+    or eax, r8d
     EMIT_ARM eax
 
     ; Patch cbz
     mov rax, [r13 + 16]
     sub rax, r10
     sar rax, 2
-    and rax, 0x7FFFF
-    shl rax, 5
-    or rax, 0xB4000000
+    and eax, 0x7FFFF
+    shl eax, 5
+    mov r8d, 0xB4000000
+    or eax, r8d
     mov rdi, r13
     mov rsi, r10
-    mov rdx, rax
+    mov edx, eax
     call patch_dword
     jmp .next
 
@@ -403,18 +411,20 @@ arm_emit_stmt:
     mov rcx, [rbp - 16]
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF80003A0       ; stur x0, [x29, #-stop_off]
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF80003A0
+    or eax, r8d              ; stur x0, [x29, #-stop_off]
     EMIT_ARM eax
 
     ; Initialize loop var = 0 -> stur xzr, [x29, #-i_off]
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF800033F       ; stur xzr, [x29, #-i_off]
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF80003BF
+    or eax, r8d              ; stur xzr, [x29, #-i_off]
     EMIT_ARM eax
 
     mov rbx, [r13 + 16]      ; loop_start
@@ -424,18 +434,20 @@ arm_emit_stmt:
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF84003A0
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF84003A0
+    or eax, r8d
     EMIT_ARM eax
 
     ; Load stop limit into x1: ldur x1, [x29, #-stop_off]
     mov rcx, [rbp - 16]
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF84003A1
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF84003A1
+    or eax, r8d
     EMIT_ARM eax
 
     ; cmp x0, x1 -> 0xEB01001F
@@ -456,9 +468,10 @@ arm_emit_stmt:
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF84003A0
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF84003A0
+    or eax, r8d
     EMIT_ARM eax
 
     ; add x0, x0, #1 -> 0x91000400
@@ -467,17 +480,19 @@ arm_emit_stmt:
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF80003A0
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF80003A0
+    or eax, r8d
     EMIT_ARM eax
 
     ; b for_head
     mov rax, rbx
     sub rax, [r13 + 16]
     sar rax, 2
-    and rax, 0x03FFFFFF
-    or rax, 0x14000000
+    and eax, 0x03FFFFFF
+    mov r8d, 0x14000000
+    or eax, r8d
     EMIT_ARM eax
 
     ; Patch b.ge
@@ -485,12 +500,13 @@ arm_emit_stmt:
     mov rcx, [rbp - 24]
     sub rax, rcx
     sar rax, 2               ; word offset
-    and rax, 0x7FFFF
-    shl rax, 5
-    or rax, 0x5400000A
+    and eax, 0x7FFFF
+    shl eax, 5
+    mov r8d, 0x5400000A
+    or eax, r8d
     mov rdi, r13
     mov rsi, rcx
-    mov rdx, rax
+    mov edx, eax
     call patch_dword
 
     mov rsp, rbp
@@ -506,8 +522,9 @@ arm_emit_stmt:
     mov rax, rbx
     sub rax, [r13 + 16]
     sar rax, 2
-    and rax, 0x03FFFFFF
-    or rax, 0x14000000
+    and eax, 0x03FFFFFF
+    mov r8d, 0x14000000
+    or eax, r8d
     EMIT_ARM eax
     jmp .next
 
@@ -565,9 +582,10 @@ arm_emit_expr:
     call parse_dec_int
 
     ; movz x0, #imm16 (0xD2800000 | (imm << 5))
-    and rax, 0xFFFF
-    shl rax, 5
-    or rax, 0xD2800000
+    and eax, 0xFFFF
+    shl eax, 5
+    mov r8d, 0xD2800000
+    or eax, r8d
     EMIT_ARM eax
     jmp .done
 
@@ -580,9 +598,10 @@ arm_emit_expr:
 
     ; ldur x0, [x29, #-off]
     neg rax
-    and rax, 0x1FF
-    shl rax, 12
-    or rax, 0xF84003A0
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF84003A0
+    or eax, r8d
     EMIT_ARM eax
     jmp .done
 
@@ -641,21 +660,21 @@ arm_emit_expr:
     jmp .done
 
 .op_eq:
-    ; cmp x1, x0 (0xEB00003F); cset x0, EQ (0x1A9F57E0)
+    ; cmp x1, x0 (0xEB00003F); cset x0, EQ (0x9A9F17E0)
     EMIT_ARM 0xEB00003F
-    EMIT_ARM 0x1A9F57E0
+    EMIT_ARM 0x9A9F17E0
     jmp .done
 
 .op_lt:
-    ; cmp x1, x0 (0xEB00003F); cset x0, LT (0x1A9FE7E0)
+    ; cmp x1, x0 (0xEB00003F); cset x0, LT (0x9A9FA7E0)
     EMIT_ARM 0xEB00003F
-    EMIT_ARM 0x1A9FE7E0
+    EMIT_ARM 0x9A9FA7E0
     jmp .done
 
 .op_gt:
-    ; cmp x1, x0 (0xEB00003F); cset x0, GT (0x1A9FD7E0)
+    ; cmp x1, x0 (0xEB00003F); cset x0, GT (0x9A9FD7E0)
     EMIT_ARM 0xEB00003F
-    EMIT_ARM 0x1A9FD7E0
+    EMIT_ARM 0x9A9FD7E0
     jmp .done
 
 .e_un_op:
@@ -681,8 +700,9 @@ arm_emit_expr:
     mov rax, [armstate + ArmState.print_int_off]
     sub rax, [r13 + 16]
     sar rax, 2
-    and rax, 0x03FFFFFF
-    or rax, 0x94000000
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
     EMIT_ARM eax
     jmp .done
 
@@ -753,8 +773,9 @@ arm_emit_expr:
 .has_arm_fn_target:
     sub rax, [r13 + 16]
     sar rax, 2
-    and rax, 0x03FFFFFF
-    or rax, 0x94000000
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
     EMIT_ARM eax
     jmp .done
 
@@ -805,17 +826,17 @@ arm_encode_asm_line:
     push r14
 
     mov r12, rdi             ; str
-    mov r13, rsi             ; len
-    mov r14, rdx             ; CodeBuf
+    mov r14, rsi             ; len
+    mov r13, rdx             ; CodeBuf
 
 .trim_loop:
-    test r13, r13
+    test r14, r14
     jz .done_line
     mov al, [r12]
     cmp al, ' '
     jne .check_mnem
     inc r12
-    dec r13
+    dec r14
     jmp .trim_loop
 
 .check_mnem:
@@ -852,13 +873,13 @@ arm_encode_asm_line:
     ; mov x0, #1 -> 0xD2800020
     ; mov x8, #93 -> 0xD2800BA8
     add r12, 3
-    sub r13, 3
+    sub r14, 3
 
 .trim_mov:
     cmp byte [r12], ' '
     jne .parsed_mov
     inc r12
-    dec r13
+    dec r14
     jmp .trim_mov
 
 .parsed_mov:
@@ -872,26 +893,28 @@ arm_encode_asm_line:
 .mov_x0:
     ; mov x0, imm (0xD2800000 | (imm << 5))
     add r12, 4
-    sub r13, 4
+    sub r14, 4
     mov rdi, r12
-    mov rcx, r13
+    mov rcx, r14
     call parse_dec_int
-    and rax, 0xFFFF
-    shl rax, 5
-    or rax, 0xD2800000
+    and eax, 0xFFFF
+    shl eax, 5
+    mov r8d, 0xD2800000
+    or eax, r8d
     EMIT_ARM eax
     jmp .done_line
 
 .mov_x8:
-    ; mov x8, imm (0xD2800BA8 | (imm << 5))
+    ; mov x8, imm (0xD2800008 | (imm << 5))
     add r12, 4
-    sub r13, 4
+    sub r14, 4
     mov rdi, r12
-    mov rcx, r13
+    mov rcx, r14
     call parse_dec_int
-    and rax, 0xFFFF
-    shl rax, 5
-    or rax, 0xD2800BA8
+    and eax, 0xFFFF
+    shl eax, 5
+    mov r8d, 0xD2800008
+    or eax, r8d
     EMIT_ARM eax
     jmp .done_line
 

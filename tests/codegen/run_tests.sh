@@ -41,12 +41,13 @@ EOF
     local bin_arm="/tmp/cap_test_${base}_arm"
     local stdout_arm stderr_arm exit_arm actual_arm
     if [ "$base" = "08_asm_block" ]; then
-        local arm_src="/tmp/${base}_arm.cap"
+        local arm_src="/tmp/08_asm_block_arm.cap"
         cat << 'EOF' > "$arm_src"
 fn main():
+    x = 42
     asm:
         mov x0, 42
-    return x0
+    return x
 EOF
         "$CAPC" -a -o "$bin_arm" "$arm_src" 2>/tmp/cap_test_stderr_arm
         rm -f "$arm_src"
