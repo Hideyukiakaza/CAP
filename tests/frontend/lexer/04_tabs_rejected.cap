@@ -1,0 +1,2 @@
+if x > 10:
+	print("uses a tab, should be rejected")

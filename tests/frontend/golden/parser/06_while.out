@@ -1,0 +1,13 @@
+EXIT: 0
+STDOUT:
+Program
+  While
+    BinOp >
+      Ident x
+      Literal 0
+    Block
+      VarDecl x
+        BinOp -
+          Ident x
+          Literal 1
+STDERR:

@@ -1,0 +1,9 @@
+EXIT: 0
+STDOUT:
+Program
+  ExprStmt
+    Call print
+      Literal 1
+      Literal 2
+      Literal 3
+STDERR:

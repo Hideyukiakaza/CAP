@@ -1,0 +1,50 @@
+; src/tokens.inc - Token Definitions for CAP v0.1 Frontend
+
+%define TOKEN_EOF        0
+%define TOKEN_NEWLINE    1
+%define TOKEN_INDENT     2
+%define TOKEN_DEDENT     3
+%define TOKEN_IDENT      4
+%define TOKEN_INT        5
+%define TOKEN_FLOAT      6
+%define TOKEN_STRING     7
+%define TOKEN_KEYWORD    8
+%define TOKEN_OP         9
+%define TOKEN_COLON      10
+%define TOKEN_COMMA      11
+%define TOKEN_DOT        12
+%define TOKEN_LPAREN     13
+%define TOKEN_RPAREN     14
+%define TOKEN_LBRACE     15
+%define TOKEN_RBRACE     16
+%define TOKEN_LBRACKET   17
+%define TOKEN_RBRACKET   18
+%define TOKEN_ASM_LINE   19
+
+; Keyword Subtypes
+%define KW_IF        1
+%define KW_ELIF      2
+%define KW_ELSE      3
+%define KW_FOR       4
+%define KW_IN        5
+%define KW_WHILE     6
+%define KW_LOOP      7
+%define KW_BREAK     8
+%define KW_FN        9
+%define KW_RETURN    10
+%define KW_STRUCT    11
+%define KW_CONST     12
+%define KW_RAW       13
+%define KW_DEFER     14
+%define KW_ALLOC     15
+%define KW_FREE      16
+%define KW_ASM       17
+%define KW_IMPORT    18
+%define KW_RANGE     19
+
+struc Token
+    .type: resq 1
+    .val:  resq 1
+    .len:  resq 1
+    .line: resq 1
+endstruc

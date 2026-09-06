@@ -1,0 +1,6 @@
+if x > 10:
+    print("big")
+elif x == 10:
+    print("equal")
+else:
+    print("small")

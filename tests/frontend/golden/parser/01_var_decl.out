@@ -1,0 +1,12 @@
+EXIT: 0
+STDOUT:
+Program
+  VarDecl x
+    Literal 10
+  VarDecl y
+    Literal 10.5
+  VarDecl name
+    Literal cap
+  ConstDecl PI
+    Literal 3.14159
+STDERR:

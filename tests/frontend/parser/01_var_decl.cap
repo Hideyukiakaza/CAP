@@ -1,0 +1,4 @@
+x = 10
+y = 10.5
+name = "cap"
+const PI = 3.14159

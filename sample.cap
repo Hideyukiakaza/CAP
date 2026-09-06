@@ -1,0 +1,40 @@
+x = 10
+y = 10.5
+name = "cap"
+const PI = 3.14159
+
+fn add(a, b):
+    return a + b
+
+if x > 10:
+    print("big")
+elif x == 10:
+    print("equal")
+else:
+    print("small")
+
+for i in 10:
+    print(i)
+
+for i in range(2, 10, 2):
+    print(i)
+
+while x > 0:
+    x = x - 1
+
+loop:
+    if done:
+        break
+
+struct Vec3:
+    x: f32
+    y: f32
+    z: f32
+
+v = Vec3{x: 1.0, y: 2.0, z: 3.0}
+
+asm:
+    mov rax, 1
+    syscall
+
+import cap_module
