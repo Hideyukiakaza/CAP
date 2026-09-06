@@ -3,7 +3,7 @@ default rel
 
 section .text
 global sys_exit, sys_write, sys_read, sys_open, sys_close, sys_mmap
-global malloc_init, malloc_bytes, str_len, str_cmp, str_ncmp, print_str, print_err, print_char, print_num
+global malloc_init, malloc_bytes, str_len, str_cmp, str_ncmp, print_str, print_err, print_char, print_num, parse_dec_int
 
 %define SYS_READ 0
 %define SYS_WRITE 1
@@ -125,6 +125,31 @@ print_num:
     pop rcx
     pop rbx
     pop rax
+    ret
+
+parse_dec_int:
+    ; rdi = str_ptr, rcx = len -> returns uint64 in rax
+    push rbx
+    push rsi
+    xor rax, rax
+    xor rbx, rbx
+.p_loop:
+    test rcx, rcx
+    jz .p_done
+    mov bl, [rdi]
+    cmp bl, '0'
+    jl .p_done
+    cmp bl, '9'
+    jg .p_done
+    sub bl, '0'
+    imul rax, 10
+    add rax, rbx
+    inc rdi
+    dec rcx
+    jmp .p_loop
+.p_done:
+    pop rsi
+    pop rbx
     ret
 
 str_len:

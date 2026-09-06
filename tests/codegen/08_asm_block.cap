@@ -1,0 +1,4 @@
+fn main():
+    asm:
+        mov rax, 42
+    return rax

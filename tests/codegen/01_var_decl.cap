@@ -1,0 +1,4 @@
+fn main():
+    x = 10
+    y = 32
+    return x + y
