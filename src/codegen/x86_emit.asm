@@ -19,7 +19,7 @@ s_pop:               db "pop", 0
 section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_x86_print_int, emit_x86_print_str
+extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap
 extern sym_init, add_symbol, find_symbol_offset
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
 extern print_err, sys_exit, str_ncmp, parse_dec_int
@@ -28,6 +28,7 @@ struc X86State
     .code_buf:     resq 1
     .print_int_off:resq 1
     .print_str_off:resq 1
+    .div_zero_off: resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .loop_start:   resq 1
@@ -96,6 +97,11 @@ x86_emit_program:
     mov [xstate + X86State.print_str_off], rax
     mov rdi, r13
     call emit_x86_print_str
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.div_zero_off], rax
+    mov rdi, r13
+    call emit_x86_div_zero_trap
 
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
@@ -282,6 +288,7 @@ x86_emit_stmt:
     push rbx
     push r12
     push r13
+    sub rsp, 40              ; stack space for loop state: [rbp-32]=i_off, [rbp-40]=stop_off, [rbp-48]=step_off, [rbp-56]=pos_fixup, [rbp-64]=neg_fixup
 
     mov r12, rdi             ; stmt node
     mov r13, [xstate + X86State.code_buf]
@@ -396,6 +403,7 @@ x86_emit_stmt:
     mov sil, 0x84
     call emit_byte
     mov rbx, [r13 + 16]      ; offset of rel32
+    push rbx
     xor rsi, rsi
     call emit_dword
 
@@ -408,11 +416,15 @@ x86_emit_stmt:
     mov sil, 0xE9
     call emit_byte
     mov r10, [r13 + 16]      ; offset of jmp rel32
+    push r10
     xor rsi, rsi
     call emit_dword
 
     ; Patch jz rel32
     mov rax, [r13 + 16]
+    pop r10
+    pop rbx
+    push r10
     sub rax, rbx
     sub rax, 4
     mov rdi, r13
@@ -429,6 +441,7 @@ x86_emit_stmt:
 .patch_if_end:
     ; Patch jmp rel32
     mov rax, [r13 + 16]
+    pop r10
     sub rax, r10
     sub rax, 4
     mov rdi, r13
@@ -457,12 +470,17 @@ x86_emit_stmt:
     mov sil, 0x84
     call emit_byte
     mov r10, [r13 + 16]      ; jz rel32 offset
+    push rbx
+    push r10
     xor rsi, rsi
     call emit_dword
 
     ; Emit body (child2)
     mov rdi, [r12 + ASTNode.child2]
     call x86_emit_stmt
+
+    pop r10
+    pop rbx
 
     ; jmp loop_start (E9 rel32)
     mov rdi, r13
@@ -486,31 +504,40 @@ x86_emit_stmt:
     jmp .next
 
 .s_for:
-    push rbp
-    mov rbp, rsp
-    sub rsp, 32
-
-    ; Bind loop var i
+    ; Bind loop var i on function stack frame
     mov rcx, [xstate + X86State.stack_offset]
     mov rdi, [r12 + ASTNode.val]
     mov rsi, [r12 + ASTNode.val_len]
     mov rdx, rcx
     call add_symbol
     add qword [xstate + X86State.stack_offset], 8
-    mov [rbp - 8], rcx       ; [rbp - 8] = i_off
+    mov [rbp - 32], rcx      ; for_i_off
 
     ; Allocate stop limit slot
     mov rcx, [xstate + X86State.stack_offset]
     add qword [xstate + X86State.stack_offset], 8
-    mov [rbp - 16], rcx      ; [rbp - 16] = stop_off
+    mov [rbp - 40], rcx      ; for_stop_off
 
-    ; Evaluate stop expression
-    mov rdi, [r12 + ASTNode.child1]
-    mov rdi, [rdi + ASTNode.child1]
-    call x86_emit_expr       ; rax = stop limit
-    mov rcx, [rbp - 16]
+    ; Allocate step slot
+    mov rcx, [xstate + X86State.stack_offset]
+    add qword [xstate + X86State.stack_offset], 8
+    mov [rbp - 48], rcx      ; for_step_off
 
-    ; Store stop limit in [rbp - stop_off]
+    ; Parse range args (child1 = AST_CALL range)
+    mov rbx, [r12 + ASTNode.child1]
+    mov rbx, [rbx + ASTNode.child1] ; arg1
+    test rbx, rbx
+    jz .for_done_init
+
+    ; Check arg count
+    mov r10, [rbx + ASTNode.next]   ; arg2
+    test r10, r10
+    jnz .range_2_or_3_args
+
+    ; 1 arg: range(stop) -> start=0, stop=arg1, step=1
+    mov rdi, rbx
+    call x86_emit_expr
+    mov rcx, [rbp - 40]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -521,10 +548,10 @@ x86_emit_stmt:
     mov rax, rcx
     neg rax
     mov esi, eax
-    call emit_dword
+    call emit_dword          ; store stop
 
-    ; Initialize loop var = 0
-    mov rcx, [rbp - 8]
+    ; start = 0
+    mov rcx, [rbp - 32]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -537,13 +564,124 @@ x86_emit_stmt:
     mov esi, eax
     call emit_dword
     xor esi, esi
-    call emit_dword          ; 0
+    call emit_dword          ; store start 0
 
+    ; step = 1
+    mov rcx, [rbp - 48]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword
+    mov esi, 1
+    call emit_dword          ; store step 1
+    jmp .for_done_init
+
+.range_2_or_3_args:
+    ; Evaluate start (arg1)
+    mov rdi, rbx
+    call x86_emit_expr
+    mov rcx, [rbp - 32]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword          ; store start
+
+    ; Evaluate stop (arg2)
+    mov rdi, r10
+    call x86_emit_expr
+    mov rcx, [rbp - 40]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword          ; store stop
+
+    ; Check arg3
+    mov r11, [r10 + ASTNode.next]
+    test r11, r11
+    jz .range_default_step
+
+    ; Evaluate step (arg3)
+    mov rdi, r11
+    call x86_emit_expr
+    mov rcx, [rbp - 48]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword          ; store step
+    jmp .for_done_init
+
+.range_default_step:
+    mov rcx, [rbp - 48]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword
+    mov esi, 1
+    call emit_dword          ; store step 1
+
+.for_done_init:
     mov rbx, [r13 + 16]      ; loop_start
 
 .for_head:
-    ; Load loop var into rax: mov rax, [rbp - i_off]
-    mov rcx, [rbp - 8]
+    ; Runtime check: cmp step, 0
+    mov rcx, [rbp - 48]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xBD
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword
+    mov sil, 0
+    call emit_byte            ; cmp qword [rbp - step_off], 0
+
+    ; jl .for_neg_step (0F 7C rel8)
+    mov sil, 0x7C
+    call emit_byte
+    mov sil, 0x1C
+    call emit_byte            ; jl +28
+
+    ; --- Positive Step Case: check i >= stop ---
+    mov rcx, [rbp - 32]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -554,10 +692,9 @@ x86_emit_stmt:
     mov rax, rcx
     neg rax
     mov esi, eax
-    call emit_dword
+    call emit_dword          ; mov rax, [rbp - i_off]
 
-    ; Load stop limit into rcx: mov rcx, [rbp - stop_off]
-    mov rcx, [rbp - 16]
+    mov rcx, [rbp - 40]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -568,16 +705,15 @@ x86_emit_stmt:
     mov rax, rcx
     neg rax
     mov esi, eax
-    call emit_dword
+    call emit_dword          ; mov rcx, [rbp - stop_off]
 
-    ; cmp rax, rcx (48 39 C8)
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x39
     call emit_byte
     mov sil, 0xC8
-    call emit_byte
+    call emit_byte          ; cmp rax, rcx
 
     ; jge for_end (0F 8D rel32)
     mov sil, 0x0F
@@ -585,31 +721,94 @@ x86_emit_stmt:
     mov sil, 0x8D
     call emit_byte
     mov rax, [r13 + 16]
-    mov [rbp - 24], rax      ; jge fixup off
+    mov [rbp - 56], rax      ; for_pos_fixup
     xor rsi, rsi
     call emit_dword
 
-    ; Emit body
-    push rbx
-    mov rdi, [r12 + ASTNode.child2]
-    call x86_emit_stmt
-    pop rbx
+    ; jmp .for_body (E9 +23)
+    mov sil, 0xE9
+    call emit_byte
+    mov esi, 23
+    call emit_dword
 
-    ; Increment loop var: add qword [rbp - i_off], 1
-    mov rcx, [rbp - 8]
+    ; --- Negative Step Case: check i <= stop ---
+    mov rcx, [rbp - 32]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
-    mov sil, 0x83
+    mov sil, 0x8B
     call emit_byte
     mov sil, 0x85
     call emit_byte
     mov rax, rcx
     neg rax
     mov esi, eax
-    call emit_dword
-    mov sil, 1
+    call emit_dword          ; mov rax, [rbp - i_off]
+
+    mov rcx, [rbp - 40]
+    mov rdi, r13
+    mov sil, 0x48
     call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x8D
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword          ; mov rcx, [rbp - stop_off]
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x39
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte          ; cmp rax, rcx
+
+    ; jle for_end (0F 8E rel32)
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x8E
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 64], rax      ; for_neg_fixup
+    xor rsi, rsi
+    call emit_dword
+
+.for_body:
+    ; Emit body
+    push rbx
+    mov rdi, [r12 + ASTNode.child2]
+    call x86_emit_stmt
+    pop rbx
+
+    ; Increment loop var: i += step
+    mov rcx, [rbp - 48]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword          ; mov rax, [rbp - step_off]
+
+    mov rcx, [rbp - 32]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword          ; add [rbp - i_off], rax
 
     ; jmp for_head
     mov sil, 0xE9
@@ -621,9 +820,9 @@ x86_emit_stmt:
     mov esi, eax
     call emit_dword
 
-    ; Patch jge rel32
+    ; Patch jge (pos)
     mov rax, [r13 + 16]
-    mov rcx, [rbp - 24]
+    mov rcx, [rbp - 56]
     sub rax, rcx
     sub rax, 4
     mov rdi, r13
@@ -631,8 +830,16 @@ x86_emit_stmt:
     mov rdx, rax
     call patch_dword
 
-    mov rsp, rbp
-    pop rbp
+    ; Patch jle (neg)
+    mov rax, [r13 + 16]
+    mov rcx, [rbp - 64]
+    sub rax, rcx
+    sub rax, 4
+    mov rdi, r13
+    mov rsi, rcx
+    mov rdx, rax
+    call patch_dword
+
     jmp .next
 
 .s_loop:
@@ -671,6 +878,7 @@ x86_emit_stmt:
     jmp .stmt_loop
 
 .done:
+    add rsp, 40
     pop r13
     pop r12
     pop rbx
@@ -825,6 +1033,29 @@ x86_emit_expr:
     jmp .done
 
 .op_div:
+    ; Check division by zero: test rax, rax (48 85 C0)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte
+    ; jnz +7 (75 07)
+    mov sil, 0x75
+    call emit_byte
+    mov sil, 0x07
+    call emit_byte
+    ; call div_zero_trap (E8 rel32)
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.div_zero_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
     ; mov rbx, rax; mov rax, rcx; cqo; idiv rbx
     mov rdi, r13
     mov sil, 0x48
@@ -852,6 +1083,29 @@ x86_emit_expr:
     jmp .done
 
 .op_mod:
+    ; Check division by zero: test rax, rax (48 85 C0)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte
+    ; jnz +7 (75 07)
+    mov sil, 0x75
+    call emit_byte
+    mov sil, 0x07
+    call emit_byte
+    ; call div_zero_trap (E8 rel32)
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.div_zero_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1177,17 +1431,17 @@ x86_encode_asm_line:
     push r14
 
     mov r12, rdi             ; str
-    mov r13, rsi             ; len
-    mov r14, rdx             ; CodeBuf
+    mov r14, rsi             ; len
+    mov r13, rdx             ; CodeBuf
 
 .trim_loop:
-    test r13, r13
+    test r14, r14
     jz .done_line
     mov al, [r12]
     cmp al, ' '
     jne .check_mnem
     inc r12
-    dec r13
+    dec r14
     jmp .trim_loop
 
 .check_mnem:
@@ -1199,7 +1453,7 @@ x86_encode_asm_line:
     test rax, rax
     jnz .chk_ret
 
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x0F
     call emit_byte
     mov sil, 0x05
@@ -1214,7 +1468,7 @@ x86_encode_asm_line:
     test rax, rax
     jnz .chk_mov
 
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0xC3
     call emit_byte
     jmp .done_line
@@ -1228,13 +1482,13 @@ x86_encode_asm_line:
     jnz .chk_add
 
     add r12, 3
-    sub r13, 3
+    sub r14, 3
 
 .trim_mov:
     cmp byte [r12], ' '
     jne .parsed_mov
     inc r12
-    dec r13
+    dec r14
     jmp .trim_mov
 
 .parsed_mov:
@@ -1250,7 +1504,7 @@ x86_encode_asm_line:
     jmp .asm_err
 
 .mov_dest_rax:
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0xC7
@@ -1259,18 +1513,18 @@ x86_encode_asm_line:
     call emit_byte
 
     add r12, 4
-    sub r13, 4
+    sub r14, 4
 .trim_imm1:
     cmp byte [r12], ' '
     jne .parse_imm1
     inc r12
-    dec r13
+    dec r14
     jmp .trim_imm1
 .parse_imm1:
     mov rdi, r12
-    mov rcx, r13
+    mov rcx, r14
     call parse_dec_int
-    mov rdi, r14
+    mov rdi, r13
     mov esi, eax
     call emit_dword
     jmp .done_line
@@ -1279,7 +1533,7 @@ x86_encode_asm_line:
     cmp byte [r12 + 5], 'r'
     je .mov_rdi_rax
 
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0xC7
@@ -1288,24 +1542,24 @@ x86_encode_asm_line:
     call emit_byte
 
     add r12, 4
-    sub r13, 4
+    sub r14, 4
 .trim_imm2:
     cmp byte [r12], ' '
     jne .parse_imm2
     inc r12
-    dec r13
+    dec r14
     jmp .trim_imm2
 .parse_imm2:
     mov rdi, r12
-    mov rcx, r13
+    mov rcx, r14
     call parse_dec_int
-    mov rdi, r14
+    mov rdi, r13
     mov esi, eax
     call emit_dword
     jmp .done_line
 
 .mov_rdi_rax:
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x89
@@ -1322,7 +1576,7 @@ x86_encode_asm_line:
     test rax, rax
     jnz .chk_sub
 
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x01
@@ -1339,7 +1593,7 @@ x86_encode_asm_line:
     test rax, rax
     jnz .chk_push
 
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x29
@@ -1356,7 +1610,7 @@ x86_encode_asm_line:
     test rax, rax
     jnz .chk_pop
 
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x53
     call emit_byte
     jmp .done_line
@@ -1369,7 +1623,7 @@ x86_encode_asm_line:
     test rax, rax
     jnz .asm_err
 
-    mov rdi, r14
+    mov rdi, r13
     mov sil, 0x5B
     call emit_byte
     jmp .done_line

@@ -15,7 +15,7 @@ s_mov_arm:               db "mov", 0
 section .text
 global arm_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_arm_print_int, emit_arm_print_str
+extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap
 extern sym_init, add_symbol, find_symbol_offset
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
 extern print_err, sys_exit, str_ncmp, parse_dec_int
@@ -24,6 +24,7 @@ struc ArmState
     .code_buf:     resq 1
     .print_int_off:resq 1
     .print_str_off:resq 1
+    .div_zero_off: resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
 endstruc
@@ -73,6 +74,11 @@ arm_emit_program:
     mov [armstate + ArmState.print_str_off], rax
     mov rdi, r13
     call emit_arm_print_str
+
+    mov rax, [r13 + 16]
+    mov [armstate + ArmState.div_zero_off], rax
+    mov rdi, r13
+    call emit_arm_div_zero_trap
 
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
@@ -631,6 +637,8 @@ arm_emit_expr:
     je .op_mul
     cmp cl, '/'
     je .op_div
+    cmp cl, '%'
+    je .op_mod
     cmp cl, '='
     je .op_eq
     cmp cl, '<'
@@ -655,8 +663,39 @@ arm_emit_expr:
     jmp .done
 
 .op_div:
+    ; cbnz x0, +8 (0xB5000040)
+    EMIT_ARM 0xB5000040
+
+    ; bl div_zero_trap
+    mov rax, [armstate + ArmState.div_zero_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax
+
     ; sdiv x0, x1, x0 -> 0x9AC00C20
     EMIT_ARM 0x9AC00C20
+    jmp .done
+
+.op_mod:
+    ; cbnz x0, +8 (0xB5000040)
+    EMIT_ARM 0xB5000040
+
+    ; bl div_zero_trap
+    mov rax, [armstate + ArmState.div_zero_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax
+
+    ; sdiv x2, x1, x0 -> 0x9AC00C22
+    EMIT_ARM 0x9AC00C22
+    ; msub x0, x2, x0, x1 -> 0x9B008040
+    EMIT_ARM 0x9B008040
     jmp .done
 
 .op_eq:
