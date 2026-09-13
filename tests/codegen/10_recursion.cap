@@ -1,10 +1,7 @@
-fn fact(n: int) -> int {
-    if n <= 1 {
-        return 1;
-    }
-    return n * fact(n - 1);
-}
+fn fact(n):
+    if n <= 1:
+        return 1
+    return n * fact(n - 1)
 
-fn main() -> int {
-    return fact(5);
-}
+fn main():
+    return fact(5)

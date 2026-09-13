@@ -1,1 +1,4 @@
-COMPILE_ERROR: LexerError: Unexpected character
+EXIT: 120
+STDOUT:
+
+STDERR:
