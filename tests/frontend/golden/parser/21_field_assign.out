@@ -1,0 +1,6 @@
+EXIT: 0
+STDOUT:
+Program
+  VarDecl x
+    Literal 5
+STDERR:

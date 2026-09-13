@@ -1,0 +1,1 @@
+v = Outer{inner: Inner{a: 1, b: 2}, c: 3}

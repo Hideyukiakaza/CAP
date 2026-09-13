@@ -419,6 +419,9 @@ x86_emit_stmt:
     test rbx, rbx
     jz .next
 
+    cmp qword [r12 + ASTNode.child2], 0
+    jne .s_var_field_assign
+
     cmp qword [rbx + ASTNode.type], AST_STRUCT_LIT
     je .s_var_struct_lit
 
@@ -455,6 +458,35 @@ x86_emit_stmt:
     call emit_dword
     jmp .next
 
+.s_var_field_assign:
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte           ; push rax (RHS)
+
+    mov rdi, [xstate + X86State.ast_root]
+    mov rsi, [r12 + ASTNode.child2]
+    call resolve_field_access
+    mov r8, rax              ; target offset
+
+    mov rdi, r13
+    mov sil, 0x59
+    call emit_byte           ; pop rcx (RHS)
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x8D
+    call emit_byte
+    mov rax, r8
+    neg rax
+    mov esi, eax
+    call emit_dword
+    jmp .next
+
 .s_var_struct_lit:
     mov r14, [rbx + ASTNode.val]
     mov r15, [rbx + ASTNode.val_len]
@@ -483,9 +515,14 @@ x86_emit_stmt:
     add qword [xstate + X86State.stack_offset], rax
 
     mov r10, [rbx + ASTNode.child1]
-.finit_loop:
+    xor r15, r15              ; current_field_offset = 0
+    call .emit_x86_struct_lit_fields
+    jmp .next
+
+.emit_x86_struct_lit_fields:
+.slit_loop:
     test r10, r10
-    jz .next
+    jz .slit_done
 
     mov rdi, r11
     mov rsi, [r10 + ASTNode.val]
@@ -493,21 +530,31 @@ x86_emit_stmt:
     push r11
     push r10
     push rcx
+    push r15
     call find_struct_field
+    pop r15
     pop rcx
     pop r10
     pop r11
     test rax, rax
-    jz .finit_next
+    jz .slit_next
 
-    mov r8, [rax + ASTNode.extra]
+    mov r8, [rax + ASTNode.extra]     ; field offset inside struct
+    add r8, r15                      ; total combined field offset
+    mov r14, [r10 + ASTNode.child1]  ; field expr node
+
+    cmp qword [r14 + ASTNode.type], AST_STRUCT_LIT
+    je .slit_nested_struct
+
     push r11
     push r10
     push rcx
+    push r15
     push r8
-    mov rdi, [r10 + ASTNode.child1]
+    mov rdi, r14
     call x86_emit_expr
     pop r8
+    pop r15
     pop rcx
     pop r10
     pop r11
@@ -524,10 +571,45 @@ x86_emit_stmt:
     neg rax
     mov esi, eax
     call emit_dword
+    jmp .slit_next
 
-.finit_next:
+.slit_nested_struct:
+    mov rdi, [xstate + X86State.ast_root]
+    mov rsi, [rax + ASTNode.child1]  ; nested struct type name ptr
+    mov rdx, [rax + ASTNode.child2]  ; nested struct type name len
+    push r11
+    push r10
+    push rcx
+    push r15
+    push r8
+    call find_struct_decl
+    pop r8
+    pop r15
+    pop rcx
+    pop r10
+    pop r11
+    test rax, rax
+    jz .slit_next
+
+    push r11
+    push r10
+    push rcx
+    push r15
+    mov r11, rax                     ; nested struct_decl
+    mov r10, [r14 + ASTNode.child1]  ; nested FieldInit list
+    mov r15, r8                      ; updated current_field_offset
+    call .emit_x86_struct_lit_fields
+    pop r15
+    pop rcx
+    pop r10
+    pop r11
+
+.slit_next:
     mov r10, [r10 + ASTNode.next]
-    jmp .finit_loop
+    jmp .slit_loop
+
+.slit_done:
+    ret
 
 .s_return:
     mov rdi, [r12 + ASTNode.child1]
@@ -1232,12 +1314,10 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xC0
     call emit_byte
-    ; jnz +7 (75 07)
     mov sil, 0x75
     call emit_byte
-    mov sil, 0x07
+    mov sil, 0x05
     call emit_byte
-    ; call div_zero_trap (E8 rel32)
     mov sil, 0xE8
     call emit_byte
     mov rax, [xstate + X86State.div_zero_off]
@@ -1247,7 +1327,7 @@ x86_emit_expr:
     mov esi, eax
     call emit_dword
 
-    ; mov rbx, rax; mov rax, rcx; cqo; idiv rbx
+    ; mov rbx, rax; mov rax, rcx
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1261,6 +1341,42 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xC8
     call emit_byte
+
+    ; INT64_MIN / -1 Pre-check: cmp rbx, -1
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFB
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte            ; cmp rbx, -1
+    mov sil, 0x75
+    call emit_byte
+    mov sil, 0x0F
+    call emit_byte            ; jne +15 (.do_idiv)
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xBA
+    call emit_byte
+    mov rsi, 0x8000000000000000
+    call emit_qword
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x39
+    call emit_byte
+    mov sil, 0xD0
+    call emit_byte            ; cmp rax, rdx
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; je +5 (skip cqo; idiv)
+
+.do_idiv:
+    ; cqo; idiv rbx
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x99
@@ -1269,7 +1385,7 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xF7
     call emit_byte
-    mov sil, 0xF3
+    mov sil, 0xFB
     call emit_byte
     jmp .done
 
@@ -1282,12 +1398,10 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xC0
     call emit_byte
-    ; jnz +7 (75 07)
     mov sil, 0x75
     call emit_byte
-    mov sil, 0x07
+    mov sil, 0x05
     call emit_byte
-    ; call div_zero_trap (E8 rel32)
     mov sil, 0xE8
     call emit_byte
     mov rax, [xstate + X86State.div_zero_off]
@@ -1310,6 +1424,52 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xC8
     call emit_byte
+
+    ; INT64_MIN / -1 Pre-check for mod (result is 0)
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFB
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte            ; cmp rbx, -1
+    mov sil, 0x75
+    call emit_byte
+    mov sil, 0x14
+    call emit_byte            ; jne +20 (.do_imod)
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xBA
+    call emit_byte
+    mov rsi, 0x8000000000000000
+    call emit_qword
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x39
+    call emit_byte
+    mov sil, 0xD0
+    call emit_byte            ; cmp rax, rdx
+    mov sil, 0x75
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; jne +5
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte            ; xor rax, rax
+    mov sil, 0xEB
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; jmp +5 (.done)
+
+.do_imod:
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x99
@@ -1318,8 +1478,8 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xF7
     call emit_byte
-    mov sil, 0xF3
-    call emit_byte
+    mov sil, 0xFB
+    call emit_byte            ; idiv rbx
     mov sil, 0x48
     call emit_byte
     mov sil, 0x89

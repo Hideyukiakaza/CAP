@@ -587,6 +587,8 @@ lex_operator_or_punct:
     je .t_op
     cmp al, '/'
     je .t_op
+    cmp al, '%'
+    je .t_op
     cmp al, '='
     je .t_op
     cmp al, '<'

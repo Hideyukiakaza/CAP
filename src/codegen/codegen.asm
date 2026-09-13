@@ -195,7 +195,10 @@ process_struct_decls:
     push rbx
     push r12
     push r13
+    push r14
+    push r15
 
+    mov r14, rdi                     ; ast_root
     mov rbx, [rdi + ASTNode.child1]
 .s_loop:
     test rbx, rbx
@@ -204,7 +207,6 @@ process_struct_decls:
     cmp qword [rbx + ASTNode.type], AST_STRUCT_DECL
     jne .s_next
 
-    ; Compute field offsets for struct
     mov r12, [rbx + ASTNode.child1] ; field list
     xor r13, r13                     ; current offset = 0
 
@@ -213,7 +215,27 @@ process_struct_decls:
     jz .field_done
 
     mov [r12 + ASTNode.extra], r13  ; store offset in .extra
-    add r13, 8                      ; 8 bytes per field in v0.1
+
+    mov rsi, [r12 + ASTNode.child1] ; field type name ptr
+    mov rdx, [r12 + ASTNode.child2] ; field type name len
+    test rsi, rsi
+    jz .field_default_size
+
+    mov rdi, r14                     ; ast_root
+    call find_struct_decl
+    test rax, rax
+    jz .field_default_size
+
+    mov r15, [rax + ASTNode.extra]  ; inner struct total size
+    test r15, r15
+    jz .field_default_size
+    add r13, r15
+    jmp .field_next
+
+.field_default_size:
+    add r13, 8                      ; 8 bytes per field
+
+.field_next:
     mov r12, [r12 + ASTNode.next]
     jmp .field_loop
 
@@ -225,6 +247,8 @@ process_struct_decls:
     jmp .s_loop
 
 .s_done:
+    pop r15
+    pop r14
     pop r13
     pop r12
     pop rbx

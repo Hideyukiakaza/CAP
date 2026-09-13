@@ -177,7 +177,15 @@ print_ast_node:
     call print_val_str
     mov rsi, s_newline
     call print_str
+    push rbx
     mov rdi, [rbx + ASTNode.child1]
+    mov rsi, r12
+    inc rsi
+    call print_ast_node
+    pop rbx
+    mov rdi, [rbx + ASTNode.child2]
+    test rdi, rdi
+    jz .next_in_list
     mov rsi, r12
     inc rsi
     call print_ast_node

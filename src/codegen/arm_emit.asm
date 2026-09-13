@@ -317,6 +317,9 @@ arm_emit_stmt:
     test rbx, rbx
     jz .next
 
+    cmp qword [r12 + ASTNode.child2], 0
+    jne .s_var_arm_field_assign
+
     cmp qword [rbx + ASTNode.type], AST_STRUCT_LIT
     je .s_var_arm_struct_lit
 
@@ -349,6 +352,27 @@ arm_emit_stmt:
     EMIT_ARM eax
     jmp .next
 
+.s_var_arm_field_assign:
+    mov rdi, [r12 + ASTNode.child1]
+    call arm_emit_expr
+    EMIT_ARM 0xF81F0FE0
+
+    mov rdi, [armstate + ArmState.ast_root]
+    mov rsi, [r12 + ASTNode.child2]
+    call resolve_field_access
+    mov r15, rax
+
+    EMIT_ARM 0xF84107E1
+
+    mov rax, r15
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF80003A1
+    or eax, r8d
+    EMIT_ARM eax
+    jmp .next
+
 .s_var_arm_struct_lit:
     mov r14, [rbx + ASTNode.val]
     mov r15, [rbx + ASTNode.val_len]
@@ -377,9 +401,14 @@ arm_emit_stmt:
     add qword [armstate + ArmState.stack_offset], rax
 
     mov r10, [rbx + ASTNode.child1]
-.arm_finit_loop:
+    xor r15, r15
+    call .emit_arm_struct_lit_fields
+    jmp .next
+
+.emit_arm_struct_lit_fields:
+.arm_slit_loop:
     test r10, r10
-    jz .next
+    jz .arm_slit_done
 
     mov rdi, r11
     mov rsi, [r10 + ASTNode.val]
@@ -387,21 +416,31 @@ arm_emit_stmt:
     push r11
     push r10
     push rcx
+    push r15
     call find_struct_field
+    pop r15
     pop rcx
     pop r10
     pop r11
     test rax, rax
-    jz .arm_finit_next
+    jz .arm_slit_next
 
     mov r8, [rax + ASTNode.extra]
+    add r8, r15
+    mov r14, [r10 + ASTNode.child1]
+
+    cmp qword [r14 + ASTNode.type], AST_STRUCT_LIT
+    je .arm_slit_nested_struct
+
     push r11
     push r10
     push rcx
+    push r15
     push r8
-    mov rdi, [r10 + ASTNode.child1]
+    mov rdi, r14
     call arm_emit_expr
     pop r8
+    pop r15
     pop rcx
     pop r10
     pop r11
@@ -414,10 +453,45 @@ arm_emit_stmt:
     mov r8d, 0xF80003A0
     or eax, r8d
     EMIT_ARM eax
+    jmp .arm_slit_next
 
-.arm_finit_next:
+.arm_slit_nested_struct:
+    mov rdi, [armstate + ArmState.ast_root]
+    mov rsi, [rax + ASTNode.child1]
+    mov rdx, [rax + ASTNode.child2]
+    push r11
+    push r10
+    push rcx
+    push r15
+    push r8
+    call find_struct_decl
+    pop r8
+    pop r15
+    pop rcx
+    pop r10
+    pop r11
+    test rax, rax
+    jz .arm_slit_next
+
+    push r11
+    push r10
+    push rcx
+    push r15
+    mov r11, rax
+    mov r10, [r14 + ASTNode.child1]
+    mov r15, r8
+    call .emit_arm_struct_lit_fields
+    pop r15
+    pop rcx
+    pop r10
+    pop r11
+
+.arm_slit_next:
     mov r10, [r10 + ASTNode.next]
-    jmp .arm_finit_loop
+    jmp .arm_slit_loop
+
+.arm_slit_done:
+    ret
 
 .s_return:
     mov rdi, [r12 + ASTNode.child1]
@@ -747,11 +821,41 @@ arm_emit_expr:
     mov rdi, [r12 + ASTNode.val]
     mov rcx, [r12 + ASTNode.val_len]
     call parse_dec_int
+    mov rbx, rax
 
-    ; movz x0, #imm16 (0xD2800000 | (imm << 5))
+    mov eax, ebx
     and eax, 0xFFFF
     shl eax, 5
     mov r8d, 0xD2800000
+    or eax, r8d
+    EMIT_ARM eax
+
+    mov rax, rbx
+    shr rax, 16
+    and eax, 0xFFFF
+    jz .e_lit_check_upper
+    shl eax, 5
+    mov r8d, 0xF2A00000
+    or eax, r8d
+    EMIT_ARM eax
+
+.e_lit_check_upper:
+    mov rax, rbx
+    shr rax, 32
+    and eax, 0xFFFF
+    jz .e_lit_check_top
+    shl eax, 5
+    mov r8d, 0xF2C00000
+    or eax, r8d
+    EMIT_ARM eax
+
+.e_lit_check_top:
+    mov rax, rbx
+    shr rax, 48
+    and eax, 0xFFFF
+    jz .done
+    shl eax, 5
+    mov r8d, 0xF2E00000
     or eax, r8d
     EMIT_ARM eax
     jmp .done
@@ -855,8 +959,8 @@ arm_emit_expr:
 
     ; sdiv x2, x1, x0 -> 0x9AC00C22
     EMIT_ARM 0x9AC00C22
-    ; msub x0, x2, x0, x1 -> 0x9B008040
-    EMIT_ARM 0x9B008040
+    ; msub x0, x2, x0, x1 -> 0x9B008440
+    EMIT_ARM 0x9B008440
     jmp .done
 
 .op_eq:

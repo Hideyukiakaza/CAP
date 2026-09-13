@@ -288,32 +288,90 @@ parse_raw_var_stmt:
     ret
 
 parse_var_assign_or_expr_stmt:
+    push rbp
+    mov rbp, rsp
     push rbx
     push r12
     push r13
+
     call lexer_peek_token
     mov rbx, rax
     cmp qword [rbx + Token.type], TOKEN_IDENT
-    jne .is_expr_stmt
+    jne .is_expr_stmt_fallback
 
-    call lexer_next_token
+    call lexer_next_token          ; consume IDENT
     call lexer_peek_token
-    mov rcx, [rax + Token.type]
+    cmp qword [rax + Token.type], TOKEN_COLON
+    je .handle_colon_decl
 
-    cmp rcx, TOKEN_OP
-    jne .check_colon
+    call lexer_rewind              ; rewind to IDENT
+
+.is_expr_stmt_fallback:
+    call parse_expr
+    mov rbx, rax                   ; rbx = lhs_expr
+
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_OP
+    jne .make_expr_stmt
+
     mov rdx, [rax + Token.val]
+    mov rcx, [rax + Token.len]
+    cmp rcx, 1
+    jne .make_expr_stmt
     cmp byte [rdx], '='
-    jne .not_assign
+    jne .make_expr_stmt
 
-    mov r13, rbx
-    call lexer_next_token
+    call lexer_next_token          ; consume '='
+    call parse_expr
+    mov r12, rax                   ; r12 = rhs_expr
+
+    mov rdi, AST_VAR_DECL
+    call create_ast_node
+    mov r13, rax
+
+    mov rdx, [rbx + ASTNode.val]
+    mov rcx, [rbx + ASTNode.val_len]
+    mov [r13 + ASTNode.val], rdx
+    mov [r13 + ASTNode.val_len], rcx
+    mov [r13 + ASTNode.child1], r12 ; child1 = RHS
+
+    cmp qword [rbx + ASTNode.type], AST_FIELD_ACCESS
+    jne .done_assign_node
+    mov [r13 + ASTNode.child2], rbx ; child2 = LHS (FieldAccess)
+
+.done_assign_node:
+    push r13
+    call consume_optional_newline
+    pop rax
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.make_expr_stmt:
+    mov rdi, AST_EXPR_STMT
+    call create_ast_node
+    mov [rax + ASTNode.child1], rbx
+    push rax
+    call consume_optional_newline
+    pop rax
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.handle_colon_decl:
+    call lexer_next_token          ; consume ':'
+    call lexer_next_token          ; consume TYPE
+    call lexer_next_token          ; consume '='
     call parse_expr
     mov r12, rax
     mov rdi, AST_VAR_DECL
     call create_ast_node
-    mov rdx, [r13 + Token.val]
-    mov rcx, [r13 + Token.len]
+    mov rdx, [rbx + Token.val]
+    mov rcx, [rbx + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], r12
@@ -323,40 +381,7 @@ parse_var_assign_or_expr_stmt:
     pop r13
     pop r12
     pop rbx
-    ret
-
-.check_colon:
-    cmp rcx, TOKEN_COLON
-    jne .not_assign
-    mov r13, rbx
-    call lexer_next_token
-    call lexer_next_token
-    call lexer_next_token
-    call parse_expr
-    mov r12, rax
-    mov rdi, AST_VAR_DECL
-    call create_ast_node
-    mov rdx, [r13 + Token.val]
-    mov rcx, [r13 + Token.len]
-    mov [rax + ASTNode.val], rdx
-    mov [rax + ASTNode.val_len], rcx
-    mov [rax + ASTNode.child1], r12
-    push rax
-    call consume_optional_newline
-    pop rax
-    pop r13
-    pop r12
-    pop rbx
-    ret
-
-.not_assign:
-    call lexer_rewind
-
-.is_expr_stmt:
-    call parse_expr_stmt
-    pop r13
-    pop r12
-    pop rbx
+    pop rbp
     ret
 
 parse_fn_decl_stmt:
@@ -961,6 +986,8 @@ parse_multiplicative_expr:
     cmp cl, '*'
     je .is_mul_op
     cmp cl, '/'
+    je .is_mul_op
+    cmp cl, '%'
     je .is_mul_op
     jmp .mul_done
 
