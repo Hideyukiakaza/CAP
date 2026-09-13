@@ -8,6 +8,7 @@ section .data
 err_syntax: db "SyntaxError: Unexpected token", 10, 0
 err_expected_colon: db "SyntaxError: Expected ':'", 10, 0
 err_expected_indent: db "SyntaxError: Expected indented block", 10, 0
+err_expected_ident: db "SyntaxError: Expected identifier after '.'", 10, 0
 s_type_is: db "Token type: ", 0
 s_line_is: db "Token line: ", 0
 s_val_is: db "Token val: ", 0
@@ -1320,7 +1321,11 @@ parse_primary_expr:
 
 .postfix_dot:
     call lexer_next_token          ; consume '.'
-    call lexer_next_token          ; get field ident token
+    call lexer_peek_token          ; peek token after '.'
+    cmp qword [rax + Token.type], TOKEN_IDENT
+    jne .err_expected_ident
+
+    call lexer_next_token          ; consume field ident token
     mov r12, [rax + Token.val]     ; IMMEDIATELY extract val
     mov r13, [rax + Token.len]     ; IMMEDIATELY extract len
 
@@ -1331,6 +1336,12 @@ parse_primary_expr:
     mov [rax + ASTNode.child1], rbx
     mov rbx, rax
     jmp .postfix_loop
+
+.err_expected_ident:
+    mov rsi, err_expected_ident
+    call print_err
+    mov rdi, 1
+    call sys_exit
 
 .postfix_index:
     call lexer_next_token          ; consume '['
