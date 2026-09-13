@@ -20,7 +20,8 @@ section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
 extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap
-extern sym_init, add_symbol, find_symbol_offset
+extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
+extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
 extern print_err, sys_exit, str_ncmp, parse_dec_int
 
@@ -33,6 +34,7 @@ struc X86State
     .stack_offset: resq 1
     .loop_start:   resq 1
     .loop_end:     resq 1
+    .ast_root:     resq 1
 endstruc
 
 section .bss
@@ -51,6 +53,7 @@ x86_emit_program:
     mov r13, rsi             ; code_buf
 
     mov [xstate + X86State.code_buf], r13
+    mov [xstate + X86State.ast_root], r12
     call fn_sym_init
 
     ; 1. Emit _start sequence at offset 0
@@ -141,6 +144,8 @@ x86_emit_fn:
     push rbx
     push r12
     push r13
+    push r14
+    push r15
 
     mov r12, rdi             ; fn AST node
     mov r13, [xstate + X86State.code_buf]
@@ -195,7 +200,84 @@ x86_emit_fn:
     test rbx, rbx
     jz .body
 
-    ; Allocate stack slot
+    mov r15, [xstate + X86State.stack_offset]
+    mov r8, [rbx + ASTNode.child1]     ; type ptr (if struct)
+    mov r9, [rbx + ASTNode.child2]     ; type len (if struct)
+
+    test r8, r8
+    jz .p_scalar
+
+    push rbx
+    push r10
+    mov rdi, [xstate + X86State.ast_root]
+    mov rsi, r8
+    mov rdx, r9
+    call find_struct_decl
+    pop r10
+    pop rbx
+    test rax, rax
+    jz .p_scalar
+
+    mov r11, [rax + ASTNode.extra]     ; struct size
+    push rbx
+    push r10
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    mov rdx, r15
+    mov rcx, [rbx + ASTNode.child1]
+    mov r8, [rbx + ASTNode.child2]
+    call add_symbol_type
+    pop r10
+    pop rbx
+
+    add qword [xstate + X86State.stack_offset], r11
+    xor r14, r14
+.p_copy_loop:
+    cmp r14, r11
+    jge .param_next
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+
+    cmp r10, 0
+    je .sp0
+    cmp r10, 1
+    je .sp1
+    cmp r10, 2
+    je .sp2
+    cmp r10, 3
+    je .sp3
+    cmp r10, 4
+    je .sp4
+    jmp .sp5
+
+.sp0: mov sil, 0x7D
+    jmp .emit_sp_disp
+.sp1: mov sil, 0x75
+    jmp .emit_sp_disp
+.sp2: mov sil, 0x55
+    jmp .emit_sp_disp
+.sp3: mov sil, 0x4D
+    jmp .emit_sp_disp
+.sp4: mov sil, 0x45
+    jmp .emit_sp_disp
+.sp5: mov sil, 0x4D
+.emit_sp_disp:
+    call emit_byte
+    mov rax, r15
+    add rax, r14
+    neg rax
+    mov sil, al
+    call emit_byte
+
+    inc r10
+    add r14, 8
+    jmp .p_copy_loop
+
+.p_scalar:
     mov rcx, [xstate + X86State.stack_offset]
     mov rdi, [rbx + ASTNode.val]
     mov rsi, [rbx + ASTNode.val_len]
@@ -203,9 +285,7 @@ x86_emit_fn:
     call add_symbol
     add qword [xstate + X86State.stack_offset], 8
 
-    ; Move arg register to stack slot
-    ; System V arg regs: rdi (0), rsi (1), rdx (2), rcx (3), r8 (4), r9 (5)
-    ; mov [rbp - off], arg_reg
+    mov r15, rcx
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -237,12 +317,14 @@ x86_emit_fn:
 .p5: mov sil, 0x4D
 .emit_p_disp:
     call emit_byte
-    mov rax, rcx
+    mov rax, r15
     neg rax
     mov sil, al
     call emit_byte
 
     inc r10
+
+.param_next:
     mov rbx, [rbx + ASTNode.next]
     jmp .param_loop
 
@@ -275,6 +357,8 @@ x86_emit_fn:
     mov sil, 0xC3
     call emit_byte
 
+    pop r15
+    pop r14
     pop r13
     pop r12
     pop rbx
@@ -288,6 +372,8 @@ x86_emit_stmt:
     push rbx
     push r12
     push r13
+    push r14
+    push r15
     sub rsp, 40              ; stack space for loop state: [rbp-32]=i_off, [rbp-40]=stop_off, [rbp-48]=step_off, [rbp-56]=pos_fixup, [rbp-64]=neg_fixup
 
     mov r12, rdi             ; stmt node
@@ -329,6 +415,13 @@ x86_emit_stmt:
     jmp .next
 
 .s_var_decl:
+    mov rbx, [r12 + ASTNode.child1]
+    test rbx, rbx
+    jz .next
+
+    cmp qword [rbx + ASTNode.type], AST_STRUCT_LIT
+    je .s_var_struct_lit
+
     mov rdi, [r12 + ASTNode.val]
     mov rsi, [r12 + ASTNode.val_len]
     call find_symbol_offset
@@ -349,7 +442,6 @@ x86_emit_stmt:
     call x86_emit_expr
     pop rcx                  ; stack offset
 
-    ; mov [rbp - off], rax -> 48 89 85 <32-bit negative disp>
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -362,6 +454,80 @@ x86_emit_stmt:
     mov esi, eax
     call emit_dword
     jmp .next
+
+.s_var_struct_lit:
+    mov r14, [rbx + ASTNode.val]
+    mov r15, [rbx + ASTNode.val_len]
+
+    mov rdi, [xstate + X86State.ast_root]
+    mov rsi, r14
+    mov rdx, r15
+    call find_struct_decl
+    test rax, rax
+    jz .next
+    mov r11, rax
+
+    mov rcx, [xstate + X86State.stack_offset]
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, [r12 + ASTNode.val_len]
+    mov rdx, rcx
+    mov rcx, r14
+    mov r8, r15
+    push r11
+    push rdx
+    call add_symbol_type
+    pop rcx
+    pop r11
+
+    mov rax, [r11 + ASTNode.extra]
+    add qword [xstate + X86State.stack_offset], rax
+
+    mov r10, [rbx + ASTNode.child1]
+.finit_loop:
+    test r10, r10
+    jz .next
+
+    mov rdi, r11
+    mov rsi, [r10 + ASTNode.val]
+    mov rdx, [r10 + ASTNode.val_len]
+    push r11
+    push r10
+    push rcx
+    call find_struct_field
+    pop rcx
+    pop r10
+    pop r11
+    test rax, rax
+    jz .finit_next
+
+    mov r8, [rax + ASTNode.extra]
+    push r11
+    push r10
+    push rcx
+    push r8
+    mov rdi, [r10 + ASTNode.child1]
+    call x86_emit_expr
+    pop r8
+    pop rcx
+    pop r10
+    pop r11
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    add rax, r8
+    neg rax
+    mov esi, eax
+    call emit_dword
+
+.finit_next:
+    mov r10, [r10 + ASTNode.next]
+    jmp .finit_loop
 
 .s_return:
     mov rdi, [r12 + ASTNode.child1]
@@ -879,6 +1045,8 @@ x86_emit_stmt:
 
 .done:
     add rsp, 40
+    pop r15
+    pop r14
     pop r13
     pop r12
     pop rbx
@@ -892,6 +1060,8 @@ x86_emit_expr:
     push rbx
     push r12
     push r13
+    push r14
+    push r15
 
     mov r12, rdi             ; expr node
     mov r13, [xstate + X86State.code_buf]
@@ -912,6 +1082,27 @@ x86_emit_expr:
     je .e_struct_lit
     cmp rax, AST_INDEX
     je .e_index
+    cmp rax, AST_FIELD_ACCESS
+    je .e_field_access
+    jmp .done
+
+.e_field_access:
+    mov rdi, [xstate + X86State.ast_root]
+    mov rsi, r12
+    call resolve_field_access
+    cmp rax, -1
+    je .done
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    neg rax
+    mov esi, eax
+    call emit_dword
     jmp .done
 
 .e_literal:
@@ -1299,26 +1490,82 @@ x86_emit_expr:
     jmp .done
 
 .user_call:
-    ; Evaluate multi-arg calls: push evaluated args to stack, then pop into rdi, rsi, rdx, rcx, r8, r9
     mov rbx, [r12 + ASTNode.child1]
     xor r10, r10             ; arg count
 .arg_eval_loop:
     test rbx, rbx
     jz .pop_args
 
+    cmp qword [rbx + ASTNode.type], AST_IDENT
+    jne .arg_eval_expr
+
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    call find_symbol_entry
+    test rax, rax
+    jz .arg_eval_expr
+
+    mov r14, [rax + 24]       ; type_ptr
+    mov r15, [rax + 32]       ; type_len
+    mov rcx, [rax + 16]       ; base stack offset
+    test r14, r14
+    jz .arg_eval_expr
+
+    mov rdi, [xstate + X86State.ast_root]
+    mov rsi, r14
+    mov rdx, r15
     push r10
     push rbx
-    mov rdi, rbx
-    call x86_emit_expr        ; rax = arg val
+    push rcx
+    call find_struct_decl
+    pop rcx
     pop rbx
     pop r10
+    test rax, rax
+    jz .arg_eval_expr
 
-    ; push rax (50)
+    mov r11, [rax + ASTNode.extra]  ; struct size
+    xor r14, r14                    ; word offset
+.arg_struct_loop:
+    cmp r14, r11
+    jge .arg_next
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    add rax, r14
+    neg rax
+    mov esi, eax
+    call emit_dword
+
     mov rdi, r13
     mov sil, 0x50
     call emit_byte
 
     inc r10
+    add r14, 8
+    jmp .arg_struct_loop
+
+.arg_eval_expr:
+    push r10
+    push rbx
+    mov rdi, rbx
+    call x86_emit_expr
+    pop rbx
+    pop r10
+
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte
+
+    inc r10
+
+.arg_next:
     mov rbx, [rbx + ASTNode.next]
     jmp .arg_eval_loop
 
@@ -1385,6 +1632,8 @@ x86_emit_expr:
     jmp .done
 
 .done:
+    pop r15
+    pop r14
     pop r13
     pop r12
     pop rbx

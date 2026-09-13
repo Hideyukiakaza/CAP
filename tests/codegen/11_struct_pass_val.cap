@@ -1,13 +1,10 @@
-struct Point {
-    x: int,
+struct Point:
+    x: int
     y: int
-}
 
-fn sum_point(p: Point) -> int {
-    return p.x + p.y;
-}
+fn sum_point(p: Point):
+    return p.x + p.y
 
-fn main() -> int {
-    let p: Point = Point{x: 10, y: 32};
-    return sum_point(p);
-}
+fn main():
+    p = Point{x: 10, y: 32}
+    return sum_point(p)

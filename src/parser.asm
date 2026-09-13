@@ -396,6 +396,10 @@ parse_fn_decl_stmt:
     jne .no_param_type
     call lexer_next_token
     call lexer_next_token
+    mov r8, [rax + Token.val]
+    mov r9, [rax + Token.len]
+    mov [r14 + ASTNode.child1], r8
+    mov [r14 + ASTNode.child2], r9
 .no_param_type:
     test r13, r13
     jnz .app_param
@@ -460,11 +464,15 @@ parse_struct_decl_stmt:
     mov r15, [rax + Token.len]
     call lexer_next_token
     call lexer_next_token
+    mov r8, [rax + Token.val]
+    mov r9, [rax + Token.len]
 
     mov rdi, AST_FIELD_DECL
     call create_ast_node
     mov [rax + ASTNode.val], r14
     mov [rax + ASTNode.val_len], r15
+    mov [rax + ASTNode.child1], r8
+    mov [rax + ASTNode.child2], r9
 
     test r13, r13
     jnz .app_field
@@ -1010,6 +1018,8 @@ parse_unary_expr:
     ret
 
 parse_primary_expr:
+    push rbp
+    mov rbp, rsp
     push rbx
     push r12
     push r13
@@ -1070,10 +1080,8 @@ parse_primary_expr:
     mov rcx, [rbx + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
-    pop r13
-    pop r12
-    pop rbx
-    ret
+    mov rbx, rax
+    jmp .postfix_loop
 
 .p_kw:
     mov rsi, [rbx + Token.val]
@@ -1103,10 +1111,8 @@ parse_primary_expr:
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], r12
-    pop r13
-    pop r12
-    pop rbx
-    ret
+    mov rbx, rax
+    jmp .postfix_loop
 
 .p_range:
     call lexer_next_token
@@ -1151,10 +1157,8 @@ parse_primary_expr:
     jz .range_done
     mov [r12 + ASTNode.next], r13
 .range_done:
-    pop r13
-    pop r12
-    pop rbx
-    ret
+    mov rbx, rax
+    jmp .postfix_loop
 
 .p_ident_or_call_or_struct:
     call lexer_next_token
@@ -1175,10 +1179,8 @@ parse_primary_expr:
     mov rcx, [rbx + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
-    pop r13
-    pop r12
-    pop rbx
-    ret
+    mov rbx, rax
+    jmp .postfix_loop
 
 .p_call:
     call lexer_next_token
@@ -1214,10 +1216,8 @@ parse_primary_expr:
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], r12
-    pop r13
-    pop r12
-    pop rbx
-    ret
+    mov rbx, rax
+    jmp .postfix_loop
 
 .p_struct_lit:
     push r14
@@ -1271,10 +1271,8 @@ parse_primary_expr:
     mov [rax + ASTNode.child1], r12
     pop r15
     pop r14
-    pop r13
-    pop r12
-    pop rbx
-    ret
+    mov rbx, rax
+    jmp .postfix_loop
 
 .p_index:
     call lexer_next_token
@@ -1294,21 +1292,58 @@ parse_primary_expr:
     call create_ast_node
     mov [rax + ASTNode.child1], rbx
     mov [rax + ASTNode.child2], r12
-    pop r13
-    pop r12
-    pop rbx
-    ret
+    mov rbx, rax
+    jmp .postfix_loop
 
 .p_paren:
     call lexer_next_token
     call parse_expr
     mov rbx, rax
     call lexer_next_token
+    jmp .postfix_loop
+
+.postfix_loop:
+    call lexer_peek_token
+    mov rcx, [rax + Token.type]
+
+    cmp rcx, TOKEN_DOT
+    je .postfix_dot
+    cmp rcx, TOKEN_LBRACKET
+    je .postfix_index
+
     mov rax, rbx
     pop r13
     pop r12
     pop rbx
+    pop rbp
     ret
+
+.postfix_dot:
+    call lexer_next_token          ; consume '.'
+    call lexer_next_token          ; get field ident token
+    mov r12, [rax + Token.val]     ; IMMEDIATELY extract val
+    mov r13, [rax + Token.len]     ; IMMEDIATELY extract len
+
+    mov rdi, AST_FIELD_ACCESS
+    call create_ast_node
+    mov [rax + ASTNode.val], r12
+    mov [rax + ASTNode.val_len], r13
+    mov [rax + ASTNode.child1], rbx
+    mov rbx, rax
+    jmp .postfix_loop
+
+.postfix_index:
+    call lexer_next_token          ; consume '['
+    call parse_expr
+    mov r12, rax
+    call lexer_next_token          ; consume ']'
+
+    mov rdi, AST_INDEX
+    call create_ast_node
+    mov [rax + ASTNode.child1], rbx
+    mov [rax + ASTNode.child2], r12
+    mov rbx, rax
+    jmp .postfix_loop
 
 parse_ident_as_expr:
     call lexer_next_token

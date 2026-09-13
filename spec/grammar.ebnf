@@ -1,0 +1,77 @@
+(* CAP v0.1 Language Grammar EBNF *)
+
+program             = { statement } ;
+
+statement           = import_stmt
+                    | const_stmt
+                    | raw_var_stmt
+                    | fn_decl_stmt
+                    | struct_decl_stmt
+                    | defer_stmt
+                    | return_stmt
+                    | break_stmt
+                    | if_stmt
+                    | for_stmt
+                    | while_stmt
+                    | loop_stmt
+                    | asm_block_stmt
+                    | var_assign_or_expr_stmt ;
+
+import_stmt         = "import" , IDENT , NEWLINE ;
+const_stmt          = "const" , IDENT , "=" , expr , NEWLINE ;
+raw_var_stmt        = "raw" , IDENT , [ ":" , type_spec ] , "=" , expr , NEWLINE ;
+var_assign_stmt     = IDENT , "=" , expr , NEWLINE ;
+
+fn_decl_stmt        = "fn" , IDENT , "(" , [ param_list ] , ")" , ":" , block ;
+param_list          = param , { "," , param } ;
+(* Type annotations on function parameters are permitted and required ONLY when the parameter type is a struct *)
+param               = IDENT , [ ":" , IDENT ] ;
+
+struct_decl_stmt    = "struct" , IDENT , ":" , NEWLINE , INDENT , field_decl_list , DEDENT ;
+field_decl_list     = field_decl , { NEWLINE , field_decl } ;
+field_decl          = IDENT , ":" , type_spec ;
+type_spec           = IDENT ;
+
+defer_stmt          = "defer" , expr , NEWLINE ;
+return_stmt         = "return" , [ expr ] , NEWLINE ;
+break_stmt          = "break" , NEWLINE ;
+
+if_stmt             = "if" , expr , ":" , block , { elif_branch } , [ else_branch ] ;
+elif_branch         = "elif" , expr , ":" , block ;
+else_branch         = "else" , ":" , block ;
+
+for_stmt            = "for" , IDENT , "in" , expr , ":" , block ;
+while_stmt          = "while" , expr , ":" , block ;
+loop_stmt           = "loop" , ":" , block ;
+
+asm_block_stmt      = "asm" , ":" , NEWLINE , INDENT , { asm_line } , DEDENT ;
+
+block               = NEWLINE , INDENT , statement_list , DEDENT ;
+statement_list      = statement , { statement } ;
+
+expr                = equality_expr ;
+equality_expr       = relational_expr , { ( "==" | "!=" ) , relational_expr } ;
+relational_expr     = additive_expr , { ( "<" | ">" | "<=" | ">=" ) , additive_expr } ;
+additive_expr       = multiplicative_expr , { ( "+" | "-" ) , multiplicative_expr } ;
+multiplicative_expr = unary_expr , { ( "*" | "/" | "%" ) , unary_expr } ;
+unary_expr          = ( "-" | "&" ) , primary_expr | postfix_expr ;
+
+postfix_expr        = primary_base , { postfix_op } ;
+postfix_op          = "." , IDENT
+                    | "[" , expr , "]"
+                    | "(" , [ arg_list ] , ")" ;
+
+primary_base        = LITERAL
+                    | IDENT
+                    | struct_lit
+                    | alloc_expr
+                    | range_expr
+                    | "(" , expr , ")" ;
+
+struct_lit          = IDENT , "{" , [ field_init_list ] , "}" ;
+field_init_list     = field_init , { "," , field_init } ;
+field_init          = IDENT , ":" , expr ;
+
+alloc_expr          = "alloc" , "(" , type_spec , "," , expr , ")" ;
+range_expr          = "range" , "(" , expr , [ "," , expr , [ "," , expr ] ] , ")" ;
+arg_list            = expr , { "," , expr } ;

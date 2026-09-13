@@ -390,6 +390,11 @@ lex_number_token:
     jne .num_done
     test r12, r12
     jnz .num_done
+    mov bl, [rsi + rcx + 1]
+    cmp bl, '0'
+    jl .num_done
+    cmp bl, '9'
+    jg .num_done
     mov r12, 1
 .next_num_char:
     inc rcx

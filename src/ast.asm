@@ -34,6 +34,7 @@ s_FieldInit:   db "FieldInit ", 0
 s_Call:        db "Call ", 0
 s_Index:       db "Index", 10, 0
 s_Block:       db "Block", 10, 0
+s_FieldAccess: db "FieldAccess ", 0
 
 s_spaces:      db "  ", 0
 s_newline:     db 10, 0
@@ -148,6 +149,8 @@ print_ast_node:
     je .p_index
     cmp rax, AST_BLOCK
     je .p_block
+    cmp rax, AST_FIELD_ACCESS
+    je .p_field_access
 
     jmp .next_in_list
 
@@ -476,6 +479,18 @@ print_ast_node:
     inc rsi
     call print_ast_node
     jmp .pop_done
+
+.p_field_access:
+    mov rsi, s_FieldAccess
+    call print_str
+    call print_val_str
+    mov rsi, s_newline
+    call print_str
+    mov rdi, [rbx + ASTNode.child1]
+    mov rsi, r12
+    inc rsi
+    call print_ast_node
+    jmp .next_in_list
 
 .next_in_list:
     mov rbx, [rbx + ASTNode.next]

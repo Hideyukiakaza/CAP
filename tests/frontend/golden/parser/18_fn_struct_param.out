@@ -1,0 +1,13 @@
+EXIT: 0
+STDOUT:
+Program
+  FnDecl sum_point
+    Param p
+    Block
+      Return
+        BinOp +
+          FieldAccess x
+            Ident p
+          FieldAccess y
+            Ident p
+STDERR:
