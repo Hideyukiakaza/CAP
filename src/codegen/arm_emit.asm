@@ -15,7 +15,7 @@ s_mov_arm:               db "mov", 0
 section .text
 global arm_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap
+extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
@@ -26,6 +26,7 @@ struc ArmState
     .print_int_off:resq 1
     .print_str_off:resq 1
     .div_zero_off: resq 1
+    .overflow_off: resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .ast_root:     resq 1
@@ -84,6 +85,11 @@ arm_emit_program:
     mov [armstate + ArmState.div_zero_off], rax
     mov rdi, r13
     call emit_arm_div_zero_trap
+
+    mov rax, [r13 + 16]
+    mov [armstate + ArmState.overflow_off], rax
+    mov rdi, r13
+    call emit_arm_overflow_trap
 
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
@@ -289,6 +295,8 @@ arm_emit_stmt:
     je .s_block
     cmp rax, AST_VAR_DECL
     je .s_var_decl
+    cmp rax, AST_FIELD_ASSIGN
+    je .s_var_arm_field_assign
     cmp rax, AST_RETURN
     je .s_return
     cmp rax, AST_IF
@@ -933,6 +941,25 @@ arm_emit_expr:
 
     ; bl div_zero_trap
     mov rax, [armstate + ArmState.div_zero_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax
+
+    ; INT64_MIN / -1 Pre-check
+    EMIT_ARM 0xB100041F            ; cmn x0, #1
+    EMIT_ARM 0x54000101            ; b.ne +32
+    EMIT_ARM 0xD2800002            ; mov x2, #0
+    EMIT_ARM 0xF2A00002            ; movk x2, #0, lsl #16
+    EMIT_ARM 0xF2C00002            ; movk x2, #0, lsl #32
+    EMIT_ARM 0xF2F00002            ; movk x2, #0x8000, lsl #48
+    EMIT_ARM 0xEB02003F            ; cmp x1, x2
+    EMIT_ARM 0x54000041            ; b.ne +8
+
+    ; Trigger overflow_trap for INT64_MIN / -1
+    mov rax, [armstate + ArmState.overflow_off]
     sub rax, [r13 + 16]
     sar rax, 2
     and eax, 0x03FFFFFF

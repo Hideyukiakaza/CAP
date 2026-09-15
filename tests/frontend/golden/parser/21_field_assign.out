@@ -1,6 +1,8 @@
 EXIT: 0
 STDOUT:
 Program
-  VarDecl x
+  FieldAssign x
     Literal 5
+    FieldAccess x
+      Ident p
 STDERR:

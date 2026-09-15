@@ -4,8 +4,8 @@ default rel
 %include "src/codegen/target.inc"
 
 section .text
-global emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap
-global emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap
+global emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap
+global emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap
 extern emit_bytes
 
 emit_x86_print_int:
@@ -34,6 +34,22 @@ emit_x86_print_str:
 
     lea rsi, [rel _stub_x86_print_str]
     mov rdx, _stub_x86_print_str_end - _stub_x86_print_str
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+
+emit_x86_overflow_trap:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel _stub_x86_overflow]
+    mov rdx, _stub_x86_overflow_end - _stub_x86_overflow
     mov rdi, r12
     call emit_bytes
 
@@ -170,6 +186,34 @@ emit_arm_div_zero_trap:
 .bytes_arm_dz_end:
 
 
+emit_arm_overflow_trap:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel .bytes_arm_ovf]
+    mov rdx, .bytes_arm_ovf_end - .bytes_arm_ovf
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+.bytes_arm_ovf:
+    db 0x40, 0x00, 0x80, 0xD2    ; mov x0, #2
+    db 0xE1, 0x00, 0x00, 0x10    ; adr x1, +28
+    db 0xE2, 0x03, 0x80, 0xD2    ; mov x2, #31
+    db 0x08, 0x08, 0x80, 0xD2    ; mov x8, #64
+    db 0x01, 0x00, 0x00, 0xD4    ; svc #0
+    db 0x20, 0x00, 0x80, 0xD2    ; mov x0, #1
+    db 0xA8, 0x0B, 0x80, 0xD2    ; mov x8, #93
+    db 0x01, 0x00, 0x00, 0xD4    ; svc #0
+    db "RuntimeError: integer overflow", 10, 0
+.bytes_arm_ovf_end:
+
+
 ; Machine code template routines
 _stub_x86_print_int:
     push rbp
@@ -245,3 +289,16 @@ _stub_x86_div_zero:
     syscall
 .msg: db "RuntimeError: division by zero", 10
 _stub_x86_div_zero_end:
+
+
+_stub_x86_overflow:
+    mov rdi, 2          ; STDERR
+    lea rsi, [rel .msg]
+    mov rdx, 31         ; len ("RuntimeError: integer overflow\n")
+    mov rax, 1          ; sys_write
+    syscall
+    mov rdi, 1          ; exit code 1
+    mov rax, 60         ; sys_exit
+    syscall
+.msg: db "RuntimeError: integer overflow", 10
+_stub_x86_overflow_end:

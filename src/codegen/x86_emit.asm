@@ -19,7 +19,7 @@ s_pop:               db "pop", 0
 section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap
+extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
@@ -30,6 +30,7 @@ struc X86State
     .print_int_off:resq 1
     .print_str_off:resq 1
     .div_zero_off: resq 1
+    .overflow_off: resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .loop_start:   resq 1
@@ -105,6 +106,11 @@ x86_emit_program:
     mov [xstate + X86State.div_zero_off], rax
     mov rdi, r13
     call emit_x86_div_zero_trap
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.overflow_off], rax
+    mov rdi, r13
+    call emit_x86_overflow_trap
 
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
@@ -389,6 +395,8 @@ x86_emit_stmt:
     je .s_block
     cmp rax, AST_VAR_DECL
     je .s_var_decl
+    cmp rax, AST_FIELD_ASSIGN
+    je .s_var_field_assign
     cmp rax, AST_RETURN
     je .s_return
     cmp rax, AST_IF
@@ -1353,8 +1361,8 @@ x86_emit_expr:
     call emit_byte            ; cmp rbx, -1
     mov sil, 0x75
     call emit_byte
-    mov sil, 0x0F
-    call emit_byte            ; jne +15 (.do_idiv)
+    mov sil, 0x14
+    call emit_byte            ; jne +20 (.do_idiv)
 
     mov sil, 0x48
     call emit_byte
@@ -1369,10 +1377,20 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xD0
     call emit_byte            ; cmp rax, rdx
-    mov sil, 0x74
+    mov sil, 0x75
     call emit_byte
     mov sil, 0x05
-    call emit_byte            ; je +5 (skip cqo; idiv)
+    call emit_byte            ; jne +5 (.do_idiv)
+
+    ; Trigger overflow_trap!
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.overflow_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
 
 .do_idiv:
     ; cqo; idiv rbx

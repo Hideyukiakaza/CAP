@@ -325,18 +325,28 @@ parse_var_assign_or_expr_stmt:
     call parse_expr
     mov r12, rax                   ; r12 = rhs_expr
 
+    cmp qword [rbx + ASTNode.type], AST_FIELD_ACCESS
+    je .make_field_assign
+
     mov rdi, AST_VAR_DECL
     call create_ast_node
     mov r13, rax
-
     mov rdx, [rbx + ASTNode.val]
     mov rcx, [rbx + ASTNode.val_len]
     mov [r13 + ASTNode.val], rdx
     mov [r13 + ASTNode.val_len], rcx
     mov [r13 + ASTNode.child1], r12 ; child1 = RHS
+    jmp .done_assign_node
 
-    cmp qword [rbx + ASTNode.type], AST_FIELD_ACCESS
-    jne .done_assign_node
+.make_field_assign:
+    mov rdi, AST_FIELD_ASSIGN
+    call create_ast_node
+    mov r13, rax
+    mov rdx, [rbx + ASTNode.val]
+    mov rcx, [rbx + ASTNode.val_len]
+    mov [r13 + ASTNode.val], rdx
+    mov [r13 + ASTNode.val_len], rcx
+    mov [r13 + ASTNode.child1], r12 ; child1 = RHS
     mov [r13 + ASTNode.child2], rbx ; child2 = LHS (FieldAccess)
 
 .done_assign_node:
@@ -868,18 +878,18 @@ parse_equality_expr:
 
 .is_eq_op:
     call lexer_next_token
-    mov r12, rax
-    call parse_relational_expr
     push rax
+    call parse_relational_expr
+    mov r12, rax
+    pop r8
     mov rdi, AST_BIN_OP
     call create_ast_node
-    mov rdx, [r12 + Token.val]
-    mov rcx, [r12 + Token.len]
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], rbx
-    pop rdx
-    mov [rax + ASTNode.child2], rdx
+    mov [rax + ASTNode.child2], r12
     mov rbx, rax
     jmp .eq_loop
 
@@ -909,18 +919,18 @@ parse_relational_expr:
 
 .is_rel_op:
     call lexer_next_token
-    mov r12, rax
-    call parse_additive_expr
     push rax
+    call parse_additive_expr
+    mov r12, rax
+    pop r8
     mov rdi, AST_BIN_OP
     call create_ast_node
-    mov rdx, [r12 + Token.val]
-    mov rcx, [r12 + Token.len]
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], rbx
-    pop rdx
-    mov [rax + ASTNode.child2], rdx
+    mov [rax + ASTNode.child2], r12
     mov rbx, rax
     jmp .rel_loop
 
@@ -950,18 +960,18 @@ parse_additive_expr:
 
 .is_add_op:
     call lexer_next_token
-    mov r12, rax
-    call parse_multiplicative_expr
     push rax
+    call parse_multiplicative_expr
+    mov r12, rax
+    pop r8
     mov rdi, AST_BIN_OP
     call create_ast_node
-    mov rdx, [r12 + Token.val]
-    mov rcx, [r12 + Token.len]
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], rbx
-    pop rdx
-    mov [rax + ASTNode.child2], rdx
+    mov [rax + ASTNode.child2], r12
     mov rbx, rax
     jmp .add_loop
 
@@ -993,18 +1003,18 @@ parse_multiplicative_expr:
 
 .is_mul_op:
     call lexer_next_token
-    mov r12, rax
-    call parse_unary_expr
     push rax
+    call parse_unary_expr
+    mov r12, rax
+    pop r8
     mov rdi, AST_BIN_OP
     call create_ast_node
-    mov rdx, [r12 + Token.val]
-    mov rcx, [r12 + Token.len]
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], rbx
-    pop rdx
-    mov [rax + ASTNode.child2], rdx
+    mov [rax + ASTNode.child2], r12
     mov rbx, rax
     jmp .mul_loop
 
@@ -1015,6 +1025,11 @@ parse_multiplicative_expr:
     ret
 
 parse_unary_expr:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+
     call lexer_peek_token
     cmp qword [rax + Token.type], TOKEN_OP
     jne .not_unary
@@ -1039,10 +1054,16 @@ parse_unary_expr:
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], r12
+    pop r12
+    pop rbx
+    pop rbp
     ret
 
 .not_unary:
     call parse_primary_expr
+    pop r12
+    pop rbx
+    pop rbp
     ret
 
 parse_primary_expr:

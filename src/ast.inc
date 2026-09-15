@@ -30,6 +30,7 @@
 %define AST_BLOCK        28
 %define AST_PARAM        29
 %define AST_FIELD_ACCESS 30
+%define AST_FIELD_ASSIGN 31
 
 struc ASTNode
     .type:   resq 1
