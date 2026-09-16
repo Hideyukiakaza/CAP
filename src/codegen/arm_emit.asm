@@ -15,9 +15,8 @@ s_mov_arm:               db "mov", 0
 section .text
 global arm_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap
-extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
-extern find_struct_decl, find_struct_field, resolve_field_access
+extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap
+extern sym_init, add_symbol, find_symbol_offset
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
 extern print_err, sys_exit, str_ncmp, parse_dec_int
 
@@ -26,10 +25,8 @@ struc ArmState
     .print_int_off:resq 1
     .print_str_off:resq 1
     .div_zero_off: resq 1
-    .overflow_off: resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
-    .ast_root:     resq 1
 endstruc
 
 section .bss
@@ -50,14 +47,11 @@ arm_emit_program:
     push rbx
     push r12
     push r13
-    push r14
-    push r15
 
     mov r12, rdi             ; ast_root
     mov r13, rsi             ; code_buf
 
     mov [armstate + ArmState.code_buf], r13
-    mov [armstate + ArmState.ast_root], r12
     call fn_sym_init
 
     ; 1. Emit _start at offset 0
@@ -85,11 +79,6 @@ arm_emit_program:
     mov [armstate + ArmState.div_zero_off], rax
     mov rdi, r13
     call emit_arm_div_zero_trap
-
-    mov rax, [r13 + 16]
-    mov [armstate + ArmState.overflow_off], rax
-    mov rdi, r13
-    call emit_arm_overflow_trap
 
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
@@ -119,8 +108,6 @@ arm_emit_program:
     mov edx, eax
     call patch_dword
 
-    pop r15
-    pop r14
     pop r13
     pop r12
     pop rbx
@@ -134,8 +121,6 @@ arm_emit_fn:
     push rbx
     push r12
     push r13
-    push r14
-    push r15
 
     mov r12, rdi             ; fn AST node
     mov r13, [armstate + ArmState.code_buf]
@@ -176,57 +161,6 @@ arm_emit_fn:
     test rbx, rbx
     jz .body
 
-    mov r15, [armstate + ArmState.stack_offset]
-    mov r8, [rbx + ASTNode.child1]     ; type ptr (if struct)
-    mov r9, [rbx + ASTNode.child2]     ; type len (if struct)
-
-    test r8, r8
-    jz .arm_p_scalar
-
-    push rbx
-    push r10
-    mov rdi, [armstate + ArmState.ast_root]
-    mov rsi, r8
-    mov rdx, r9
-    call find_struct_decl
-    pop r10
-    pop rbx
-    test rax, rax
-    jz .arm_p_scalar
-
-    mov r11, [rax + ASTNode.extra]     ; struct size
-    push rbx
-    push r10
-    mov rdi, [rbx + ASTNode.val]
-    mov rsi, [rbx + ASTNode.val_len]
-    mov rdx, r15
-    mov rcx, [rbx + ASTNode.child1]
-    mov r8, [rbx + ASTNode.child2]
-    call add_symbol_type
-    pop r10
-    pop rbx
-
-    add qword [armstate + ArmState.stack_offset], r11
-    xor r14, r14
-.arm_p_copy_loop:
-    cmp r14, r11
-    jge .arm_param_next
-
-    mov rax, r15
-    add rax, r14
-    neg rax
-    and eax, 0x1FF
-    shl eax, 12
-    mov r8d, 0xF80003A0
-    or eax, r8d
-    or eax, r10d
-    EMIT_ARM eax
-
-    inc r10
-    add r14, 8
-    jmp .arm_p_copy_loop
-
-.arm_p_scalar:
     mov rcx, [armstate + ArmState.stack_offset]
     mov rdi, [rbx + ASTNode.val]
     mov rsi, [rbx + ASTNode.val_len]
@@ -234,6 +168,8 @@ arm_emit_fn:
     call add_symbol
     add qword [armstate + ArmState.stack_offset], 16
 
+    ; stur x[r10], [x29, #-rcx]
+    ; 0xF80003A0 | (( -rcx & 0x1FF) << 12) | r10
     mov rax, rcx
     neg rax
     and eax, 0x1FF
@@ -244,8 +180,6 @@ arm_emit_fn:
     EMIT_ARM eax
 
     inc r10
-
-.arm_param_next:
     mov rbx, [rbx + ASTNode.next]
     jmp .param_loop
 
@@ -264,8 +198,6 @@ arm_emit_fn:
     ; ret -> 0xD65F03C0
     EMIT_ARM 0xD65F03C0
 
-    pop r15
-    pop r14
     pop r13
     pop r12
     pop rbx
@@ -279,8 +211,6 @@ arm_emit_stmt:
     push rbx
     push r12
     push r13
-    push r14
-    push r15
 
     mov r12, rdi
     mov r13, [armstate + ArmState.code_buf]
@@ -295,8 +225,6 @@ arm_emit_stmt:
     je .s_block
     cmp rax, AST_VAR_DECL
     je .s_var_decl
-    cmp rax, AST_FIELD_ASSIGN
-    je .s_var_arm_field_assign
     cmp rax, AST_RETURN
     je .s_return
     cmp rax, AST_IF
@@ -321,16 +249,6 @@ arm_emit_stmt:
     jmp .next
 
 .s_var_decl:
-    mov rbx, [r12 + ASTNode.child1]
-    test rbx, rbx
-    jz .next
-
-    cmp qword [r12 + ASTNode.child2], 0
-    jne .s_var_arm_field_assign
-
-    cmp qword [rbx + ASTNode.type], AST_STRUCT_LIT
-    je .s_var_arm_struct_lit
-
     mov rdi, [r12 + ASTNode.val]
     mov rsi, [r12 + ASTNode.val_len]
     call find_symbol_offset
@@ -351,6 +269,7 @@ arm_emit_stmt:
     call arm_emit_expr
     pop rcx                  ; stack offset
 
+    ; stur x0, [x29, #-off]
     mov rax, rcx
     neg rax
     and eax, 0x1FF
@@ -359,147 +278,6 @@ arm_emit_stmt:
     or eax, r8d
     EMIT_ARM eax
     jmp .next
-
-.s_var_arm_field_assign:
-    mov rdi, [r12 + ASTNode.child1]
-    call arm_emit_expr
-    EMIT_ARM 0xF81F0FE0
-
-    mov rdi, [armstate + ArmState.ast_root]
-    mov rsi, [r12 + ASTNode.child2]
-    call resolve_field_access
-    mov r15, rax
-
-    EMIT_ARM 0xF84107E1
-
-    mov rax, r15
-    neg rax
-    and eax, 0x1FF
-    shl eax, 12
-    mov r8d, 0xF80003A1
-    or eax, r8d
-    EMIT_ARM eax
-    jmp .next
-
-.s_var_arm_struct_lit:
-    mov r14, [rbx + ASTNode.val]
-    mov r15, [rbx + ASTNode.val_len]
-
-    mov rdi, [armstate + ArmState.ast_root]
-    mov rsi, r14
-    mov rdx, r15
-    call find_struct_decl
-    test rax, rax
-    jz .next
-    mov r11, rax
-
-    mov rcx, [armstate + ArmState.stack_offset]
-    mov rdi, [r12 + ASTNode.val]
-    mov rsi, [r12 + ASTNode.val_len]
-    mov rdx, rcx
-    mov r8, r15
-    mov rcx, r14
-    push r11
-    push rdx
-    call add_symbol_type
-    pop rcx
-    pop r11
-
-    mov rax, [r11 + ASTNode.extra]
-    add qword [armstate + ArmState.stack_offset], rax
-
-    mov r10, [rbx + ASTNode.child1]
-    xor r15, r15
-    call .emit_arm_struct_lit_fields
-    jmp .next
-
-.emit_arm_struct_lit_fields:
-.arm_slit_loop:
-    test r10, r10
-    jz .arm_slit_done
-
-    mov rdi, r11
-    mov rsi, [r10 + ASTNode.val]
-    mov rdx, [r10 + ASTNode.val_len]
-    push r11
-    push r10
-    push rcx
-    push r15
-    call find_struct_field
-    pop r15
-    pop rcx
-    pop r10
-    pop r11
-    test rax, rax
-    jz .arm_slit_next
-
-    mov r8, [rax + ASTNode.extra]
-    add r8, r15
-    mov r14, [r10 + ASTNode.child1]
-
-    cmp qword [r14 + ASTNode.type], AST_STRUCT_LIT
-    je .arm_slit_nested_struct
-
-    push r11
-    push r10
-    push rcx
-    push r15
-    push r8
-    mov rdi, r14
-    call arm_emit_expr
-    pop r8
-    pop r15
-    pop rcx
-    pop r10
-    pop r11
-
-    mov rax, rcx
-    add rax, r8
-    neg rax
-    and eax, 0x1FF
-    shl eax, 12
-    mov r8d, 0xF80003A0
-    or eax, r8d
-    EMIT_ARM eax
-    jmp .arm_slit_next
-
-.arm_slit_nested_struct:
-    mov rdi, [armstate + ArmState.ast_root]
-    mov rsi, [rax + ASTNode.child1]
-    mov rdx, [rax + ASTNode.child2]
-    push r11
-    push r10
-    push rcx
-    push r15
-    push r8
-    call find_struct_decl
-    pop r8
-    pop r15
-    pop rcx
-    pop r10
-    pop r11
-    test rax, rax
-    jz .arm_slit_next
-
-    push r11
-    push r10
-    push rcx
-    push r15
-    mov r11, rax
-    mov r10, [r14 + ASTNode.child1]
-    mov r15, r8
-    call .emit_arm_struct_lit_fields
-    pop r15
-    pop rcx
-    pop r10
-    pop r11
-
-.arm_slit_next:
-    mov r10, [r10 + ASTNode.next]
-    jmp .arm_slit_loop
-
-.arm_slit_done:
-    ret
 
 .s_return:
     mov rdi, [r12 + ASTNode.child1]
@@ -773,8 +551,6 @@ arm_emit_stmt:
     jmp .stmt_loop
 
 .done:
-    pop r15
-    pop r14
     pop r13
     pop r12
     pop rbx
@@ -788,8 +564,6 @@ arm_emit_expr:
     push rbx
     push r12
     push r13
-    push r14
-    push r15
 
     mov r12, rdi
     mov r13, [armstate + ArmState.code_buf]
@@ -806,64 +580,17 @@ arm_emit_expr:
     je .e_un_op
     cmp rax, AST_CALL
     je .e_call
-    cmp rax, AST_FIELD_ACCESS
-    je .e_field_access
-    jmp .done
-
-.e_field_access:
-    mov rdi, [armstate + ArmState.ast_root]
-    mov rsi, r12
-    call resolve_field_access
-    cmp rax, -1
-    je .done
-
-    neg rax
-    and eax, 0x1FF
-    shl eax, 12
-    mov r8d, 0xF84003A0
-    or eax, r8d
-    EMIT_ARM eax
     jmp .done
 
 .e_literal:
     mov rdi, [r12 + ASTNode.val]
     mov rcx, [r12 + ASTNode.val_len]
     call parse_dec_int
-    mov rbx, rax
 
-    mov eax, ebx
+    ; movz x0, #imm16 (0xD2800000 | (imm << 5))
     and eax, 0xFFFF
     shl eax, 5
     mov r8d, 0xD2800000
-    or eax, r8d
-    EMIT_ARM eax
-
-    mov rax, rbx
-    shr rax, 16
-    and eax, 0xFFFF
-    jz .e_lit_check_upper
-    shl eax, 5
-    mov r8d, 0xF2A00000
-    or eax, r8d
-    EMIT_ARM eax
-
-.e_lit_check_upper:
-    mov rax, rbx
-    shr rax, 32
-    and eax, 0xFFFF
-    jz .e_lit_check_top
-    shl eax, 5
-    mov r8d, 0xF2C00000
-    or eax, r8d
-    EMIT_ARM eax
-
-.e_lit_check_top:
-    mov rax, rbx
-    shr rax, 48
-    and eax, 0xFFFF
-    jz .done
-    shl eax, 5
-    mov r8d, 0xF2E00000
     or eax, r8d
     EMIT_ARM eax
     jmp .done
@@ -948,25 +675,6 @@ arm_emit_expr:
     or eax, r8d
     EMIT_ARM eax
 
-    ; INT64_MIN / -1 Pre-check
-    EMIT_ARM 0xB100041F            ; cmn x0, #1
-    EMIT_ARM 0x54000101            ; b.ne +32
-    EMIT_ARM 0xD2800002            ; mov x2, #0
-    EMIT_ARM 0xF2A00002            ; movk x2, #0, lsl #16
-    EMIT_ARM 0xF2C00002            ; movk x2, #0, lsl #32
-    EMIT_ARM 0xF2F00002            ; movk x2, #0x8000, lsl #48
-    EMIT_ARM 0xEB02003F            ; cmp x1, x2
-    EMIT_ARM 0x54000041            ; b.ne +8
-
-    ; Trigger overflow_trap for INT64_MIN / -1
-    mov rax, [armstate + ArmState.overflow_off]
-    sub rax, [r13 + 16]
-    sar rax, 2
-    and eax, 0x03FFFFFF
-    mov r8d, 0x94000000
-    or eax, r8d
-    EMIT_ARM eax
-
     ; sdiv x0, x1, x0 -> 0x9AC00C20
     EMIT_ARM 0x9AC00C20
     jmp .done
@@ -986,8 +694,8 @@ arm_emit_expr:
 
     ; sdiv x2, x1, x0 -> 0x9AC00C22
     EMIT_ARM 0x9AC00C22
-    ; msub x0, x2, x0, x1 -> 0x9B008440
-    EMIT_ARM 0x9B008440
+    ; msub x0, x2, x0, x1 -> 0x9B008040
+    EMIT_ARM 0x9B008040
     jmp .done
 
 .op_eq:
@@ -1038,76 +746,26 @@ arm_emit_expr:
     jmp .done
 
 .user_call:
+    ; Evaluate multi-arg calls into x0, x1, x2...
     mov rbx, [r12 + ASTNode.child1]
     xor r10, r10             ; arg count
-.arm_arg_eval_loop:
+.arm_arg_loop:
     test rbx, rbx
     jz .pop_arm_args
 
-    cmp qword [rbx + ASTNode.type], AST_IDENT
-    jne .arm_arg_eval_expr
-
-    mov rdi, [rbx + ASTNode.val]
-    mov rsi, [rbx + ASTNode.val_len]
-    call find_symbol_entry
-    test rax, rax
-    jz .arm_arg_eval_expr
-
-    mov r14, [rax + 24]       ; type_ptr
-    mov r15, [rax + 32]       ; type_len
-    mov rcx, [rax + 16]       ; base stack offset
-    test r14, r14
-    jz .arm_arg_eval_expr
-
-    mov rdi, [armstate + ArmState.ast_root]
-    mov rsi, r14
-    mov rdx, r15
-    push r10
-    push rbx
-    push rcx
-    call find_struct_decl
-    pop rcx
-    pop rbx
-    pop r10
-    test rax, rax
-    jz .arm_arg_eval_expr
-
-    mov r11, [rax + ASTNode.extra]  ; struct size
-    xor r14, r14                    ; word offset
-.arm_arg_struct_loop:
-    cmp r14, r11
-    jge .arm_arg_next
-
-    mov rax, rcx
-    add rax, r14
-    neg rax
-    and eax, 0x1FF
-    shl eax, 12
-    mov r8d, 0xF84003A0
-    or eax, r8d
-    EMIT_ARM eax
-
-    EMIT_ARM 0xF81F0FE0
-
-    inc r10
-    add r14, 8
-    jmp .arm_arg_struct_loop
-
-.arm_arg_eval_expr:
     push r10
     push rbx
     mov rdi, rbx
-    call arm_emit_expr
+    call arm_emit_expr        ; x0 = arg val
     pop rbx
     pop r10
 
+    ; str x0, [sp, #-16]! -> 0xF81F0FE0
     EMIT_ARM 0xF81F0FE0
 
     inc r10
-
-.arm_arg_next:
     mov rbx, [rbx + ASTNode.next]
-    jmp .arm_arg_eval_loop
+    jmp .arm_arg_loop
 
 .pop_arm_args:
     test r10, r10
@@ -1121,37 +779,21 @@ arm_emit_expr:
     je .pop_x1
     cmp r10, 2
     je .pop_x2
-    cmp r10, 3
-    je .pop_x3
-    cmp r10, 4
-    je .pop_x4
-    cmp r10, 5
-    je .pop_x5
     jmp .pop_arm_next
 
 .pop_x0:
+    ; ldr x0, [sp], #16 -> 0xF84107E0
     EMIT_ARM 0xF84107E0
     jmp .pop_arm_next
 
 .pop_x1:
+    ; ldr x1, [sp], #16 -> 0xF84107E1
     EMIT_ARM 0xF84107E1
     jmp .pop_arm_next
 
 .pop_x2:
+    ; ldr x2, [sp], #16 -> 0xF84107E2
     EMIT_ARM 0xF84107E2
-    jmp .pop_arm_next
-
-.pop_x3:
-    EMIT_ARM 0xF84107E3
-    jmp .pop_arm_next
-
-.pop_x4:
-    EMIT_ARM 0xF84107E4
-    jmp .pop_arm_next
-
-.pop_x5:
-    EMIT_ARM 0xF84107E5
-    jmp .pop_arm_next
 
 .pop_arm_next:
     test r10, r10
@@ -1177,8 +819,6 @@ arm_emit_expr:
     jmp .done
 
 .done:
-    pop r15
-    pop r14
     pop r13
     pop r12
     pop rbx

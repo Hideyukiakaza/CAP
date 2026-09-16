@@ -1,5 +1,5 @@
-EXIT: 32
+EXIT: 2
 STDOUT:
-99
-32
+0
+2
 STDERR:

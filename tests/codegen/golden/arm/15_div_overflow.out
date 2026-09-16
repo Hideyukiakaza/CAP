@@ -1,5 +1,4 @@
-EXIT: 1
+EXIT: 0
 STDOUT:
 
 STDERR:
-RuntimeError: integer overflow

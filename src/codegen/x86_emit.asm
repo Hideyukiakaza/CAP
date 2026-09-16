@@ -7,6 +7,8 @@ default rel
 section .data
 err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
 s_print:             db "print", 0
+s_input:             db "input", 0
+s_fstring:           db "fstring", 0
 s_main:              db "main", 0
 s_syscall:           db "syscall", 0
 s_ret:               db "ret", 0
@@ -19,7 +21,7 @@ s_pop:               db "pop", 0
 section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap
+extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
@@ -31,6 +33,10 @@ struc X86State
     .print_str_off:resq 1
     .div_zero_off: resq 1
     .overflow_off: resq 1
+    .alloc_off:    resq 1
+    .input_off:    resq 1
+    .type_mismatch_off: resq 1
+    .format_int_off: resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .loop_start:   resq 1
@@ -40,6 +46,10 @@ endstruc
 
 section .bss
 xstate: resb X86State_size
+defer_nodes: resq 256
+defer_count: resq 1
+scope_defer_base: resq 64
+scope_depth: resq 1
 
 section .text
 
@@ -112,6 +122,26 @@ x86_emit_program:
     mov rdi, r13
     call emit_x86_overflow_trap
 
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.alloc_off], rax
+    mov rdi, r13
+    call emit_x86_alloc
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.input_off], rax
+    mov rdi, r13
+    call emit_x86_input
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.type_mismatch_off], rax
+    mov rdi, r13
+    call emit_x86_type_mismatch_trap
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.format_int_off], rax
+    mov rdi, r13
+    call emit_x86_format_int
+
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
 .fn_loop:
@@ -152,6 +182,10 @@ x86_emit_fn:
     push r13
     push r14
     push r15
+
+    mov qword [defer_count], 0
+    mov qword [scope_depth], 0
+    mov qword [scope_defer_base], 0
 
     mov r12, rdi             ; fn AST node
     mov r13, [xstate + X86State.code_buf]
@@ -397,6 +431,8 @@ x86_emit_stmt:
     je .s_var_decl
     cmp rax, AST_FIELD_ASSIGN
     je .s_var_field_assign
+    cmp rax, AST_DEFER
+    je .s_defer
     cmp rax, AST_RETURN
     je .s_return
     cmp rax, AST_IF
@@ -418,8 +454,36 @@ x86_emit_stmt:
     jmp .next
 
 .s_block:
+    inc qword [scope_depth]
+    mov rcx, [scope_depth]
+    mov rax, [defer_count]
+    mov [scope_defer_base + rcx * 8], rax
+
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_stmt
+
+    mov rcx, [scope_depth]
+    mov rbx, [scope_defer_base + rcx * 8]
+.block_unwind_loop:
+    cmp qword [defer_count], rbx
+    jle .block_unwind_done
+    dec qword [defer_count]
+    mov rcx, [defer_count]
+    mov rdi, [defer_nodes + rcx * 8]
+    push rbx
+    call x86_emit_stmt
+    pop rbx
+    jmp .block_unwind_loop
+
+.block_unwind_done:
+    dec qword [scope_depth]
+    jmp .next
+
+.s_defer:
+    mov rcx, [defer_count]
+    mov rax, [r12 + ASTNode.child1]
+    mov [defer_nodes + rcx * 8], rax
+    inc qword [defer_count]
     jmp .next
 
 .s_var_decl:
@@ -444,15 +508,16 @@ x86_emit_stmt:
     mov rsi, [r12 + ASTNode.val_len]
     mov rdx, rcx
     call add_symbol
-    add qword [xstate + X86State.stack_offset], 8
+    add qword [xstate + X86State.stack_offset], 16
     mov rax, rcx
 
 .var_has_slot:
     push rax                 ; stack offset
     mov rdi, [r12 + ASTNode.child1]
-    call x86_emit_expr
+    call x86_emit_expr       ; rax = val, rdx = tag
     pop rcx                  ; stack offset
 
+    ; mov [rbp - off], rax
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -461,6 +526,20 @@ x86_emit_stmt:
     mov sil, 0x85
     call emit_byte
     mov rax, rcx
+    neg rax
+    mov esi, eax
+    call emit_dword
+
+    ; mov [rbp - off - 8], rdx
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x95
+    call emit_byte
+    mov rax, rcx
+    add rax, 8
     neg rax
     mov esi, eax
     call emit_dword
@@ -622,8 +701,39 @@ x86_emit_stmt:
 .s_return:
     mov rdi, [r12 + ASTNode.child1]
     test rdi, rdi
-    jz .ret_epilogue
+    jz .ret_no_expr
     call x86_emit_expr
+    jmp .ret_unwind
+
+.ret_no_expr:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte
+
+.ret_unwind:
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte           ; push rax (save return val)
+
+    mov rbx, [defer_count]
+.ret_unwind_loop:
+    test rbx, rbx
+    jz .ret_unwind_done
+    dec rbx
+    mov rdi, [defer_nodes + rbx * 8]
+    push rbx
+    call x86_emit_stmt
+    pop rbx
+    jmp .ret_unwind_loop
+
+.ret_unwind_done:
+    mov rdi, r13
+    mov sil, 0x58
+    call emit_byte           ; pop rax (restore return val)
 
 .ret_epilogue:
     ; mov rsp, rbp (48 89 EC)
@@ -1168,12 +1278,35 @@ x86_emit_expr:
     je .e_un_op
     cmp rax, AST_CALL
     je .e_call
+    cmp rax, AST_ALLOC
+    je .e_alloc
     cmp rax, AST_STRUCT_LIT
     je .e_struct_lit
     cmp rax, AST_INDEX
     je .e_index
     cmp rax, AST_FIELD_ACCESS
     je .e_field_access
+    jmp .done
+
+.e_alloc:
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte            ; mov rdi, rax
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.alloc_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
     jmp .done
 
 .e_field_access:
@@ -1193,14 +1326,30 @@ x86_emit_expr:
     neg rax
     mov esi, eax
     call emit_dword
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword          ; rdx = 1 (INT tag)
     jmp .done
 
 .e_literal:
     mov rdi, [r12 + ASTNode.val]
     mov rcx, [r12 + ASTNode.val_len]
-    call parse_dec_int
+    test rdi, rdi
+    jz .e_lit_zero
+    mov al, [rdi]
+    cmp al, '0'
+    jl .e_lit_str
+    cmp al, '9'
+    jg .e_lit_str
 
-    ; mov rax, imm64 (48 B8 <8 bytes>)
+    call parse_dec_int
+    ; mov rax, imm64
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1208,6 +1357,75 @@ x86_emit_expr:
     call emit_byte
     mov rsi, rax
     call emit_qword
+
+    ; mov rdx, 1 (tag = 1 INT)
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.e_lit_str:
+    mov rbx, [r12 + ASTNode.val_len]
+    mov rdi, r13
+    mov sil, 0xEB
+    call emit_byte
+    mov rax, rbx
+    inc rax
+    mov sil, al
+    call emit_byte
+
+    mov r14, [r13 + 16]      ; str_addr_off
+
+    mov rdi, r13
+    mov rsi, [r12 + ASTNode.val]
+    mov rdx, rbx
+    call emit_bytes
+    mov sil, 0
+    call emit_byte           ; null byte
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8D
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+    mov rax, r14
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 3
+    call emit_dword          ; tag = 3 STRING
+    jmp .done
+
+.e_lit_zero:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xD2
+    call emit_byte
     jmp .done
 
 .e_ident:
@@ -1217,6 +1435,8 @@ x86_emit_expr:
     cmp rax, -1
     je .done
 
+    mov rbx, rax             ; rbx = stack_offset
+
     ; mov rax, [rbp - off] (48 8B 85 <32-bit disp>)
     mov rdi, r13
     mov sil, 0x48
@@ -1225,6 +1445,21 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0x85
     call emit_byte
+    mov rax, rbx
+    neg rax
+    mov esi, eax
+    call emit_dword
+
+    ; mov rdx, [rbp - off - 8] (48 8B 95 <32-bit disp>)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x95
+    call emit_byte
+    mov rax, rbx
+    add rax, 8
     neg rax
     mov esi, eax
     call emit_dword
@@ -1233,20 +1468,63 @@ x86_emit_expr:
 .e_bin_op:
     ; Left child (child1)
     mov rdi, [r12 + ASTNode.child1]
-    call x86_emit_expr
-    ; push rax (50)
+    call x86_emit_expr        ; rax = val, rdx = tag
+    ; push rax (val), push rdx (tag)
     mov rdi, r13
     mov sil, 0x50
-    call emit_byte
+    call emit_byte           ; push rax
+    mov sil, 0x52
+    call emit_byte           ; push rdx
 
     ; Right child (child2)
     mov rdi, [r12 + ASTNode.child2]
-    call x86_emit_expr
+    call x86_emit_expr       ; rax = right val, rdx = right tag
 
-    ; pop rcx (59) -> rcx = left, rax = right
+    ; pop r8 (left tag), pop rcx (left val)
     mov rdi, r13
-    mov sil, 0x59
+    mov sil, 0x41
     call emit_byte
+    mov sil, 0x58
+    call emit_byte           ; pop r8 (left tag)
+    mov sil, 0x59
+    call emit_byte           ; pop rcx (left val)
+
+    ; Check if left tag (r8) == 3 or right tag (rdx) == 3
+    mov sil, 0x49
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xF8
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte            ; cmp r8, 3
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x06
+    call emit_byte            ; je +6 (trap)
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte            ; cmp rdx, 3
+    mov sil, 0x75
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; jne +5 (skip)
+
+    ; Trigger type_mismatch_trap
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
 
     ; Check operator
     mov rbx, [r12 + ASTNode.val]
@@ -1281,6 +1559,14 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xC8
     call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword          ; rdx = 1
     jmp .done
 
 .op_sub:
@@ -1644,22 +1930,305 @@ x86_emit_expr:
     mov rdx, [r12 + ASTNode.val_len]
     call str_ncmp
     test rax, rax
-    jnz .user_call
+    jz .call_print
 
-    ; Call print(arg1)
-    mov rdi, [r12 + ASTNode.child1]
-    call x86_emit_expr
+    ; Check input
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_input
+    mov rdx, [r12 + ASTNode.val_len]
+    call str_ncmp
+    test rax, rax
+    jz .call_input
+
+    ; Check fstring
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_fstring
+    mov rdx, [r12 + ASTNode.val_len]
+    call str_ncmp
+    test rax, rax
+    jz .call_fstring
+    jmp .user_call
+
+.call_fstring:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov esi, 256
+    call emit_dword          ; mov rdi, 256
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.alloc_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call alloc_off -> rax = buf_ptr
+
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte           ; push rax (buf_start)
+    mov sil, 0x50
+    call emit_byte           ; push rax (curr_buf_ptr)
+
+    mov rbx, [r12 + ASTNode.child1]
+.fstr_loop:
+    test rbx, rbx
+    jz .fstr_done
+
+    push rbx
+    mov rdi, rbx
+    call x86_emit_expr        ; at runtime rax = val, rdx = tag
+    pop rbx
+
+    ; Emit runtime check: cmp rdx, 3 (48 83 FA 03)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte
+
+    ; je .fstr_copy_str (74 0F)
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x0F
+    call emit_byte
+
+.fstr_fmt_int:
+    mov rdi, r13
+    mov sil, 0x5E
+    call emit_byte           ; pop rsi (curr_buf_ptr)
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte            ; mov rdi, rax (int val)
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.format_int_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call format_int_off -> rax = len
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte            ; add rsi, rax
+    mov sil, 0x56
+    call emit_byte            ; push rsi (updated curr_buf_ptr)
+
+    ; jmp .fstr_next (EB 18)
+    mov sil, 0xEB
+    call emit_byte
+    mov sil, 0x18
+    call emit_byte
+
+.fstr_copy_str:
+    mov rdi, r13
+    mov sil, 0x5F
+    call emit_byte           ; pop rdi (curr_buf_ptr)
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte            ; mov rsi, rax (str_ptr)
+
+.c_loop:
+    mov rdi, r13
+    mov sil, 0x8A
+    call emit_byte
+    mov sil, 0x0E
+    call emit_byte            ; mov cl, [rsi]
+    mov sil, 0x84
+    call emit_byte
+    mov sil, 0xC9
+    call emit_byte            ; test cl, cl
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x0A
+    call emit_byte            ; jz +10 (.c_done)
+    mov sil, 0x88
+    call emit_byte
+    mov sil, 0x0F
+    call emit_byte            ; mov [rdi], cl
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte            ; inc rsi
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte            ; inc rdi
+    mov sil, 0xEB
+    call emit_byte
+    mov sil, 0xF0
+    call emit_byte            ; jmp -16
+
+.c_done:
+    mov rdi, r13
+    mov sil, 0x57
+    call emit_byte            ; push rdi (updated curr_buf_ptr)
+
+.fstr_next:
+    mov rbx, [rbx + ASTNode.next]
+    jmp .fstr_loop
+
+.fstr_done:
+    mov rdi, r13
+    mov sil, 0x5F
+    call emit_byte           ; pop rdi (curr_buf_ptr)
+    mov sil, 0xC6
+    call emit_byte
+    mov sil, 0x07
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte            ; mov byte [rdi], 0
+
+    mov sil, 0x58
+    call emit_byte           ; pop rax (buf_start)
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 3
+    call emit_dword          ; rdx = 3 (STRING tag)
+    jmp .done
+
+.call_input:
+    mov rbx, [r12 + ASTNode.child1]
+    test rbx, rbx
+    jz .input_no_prompt
+
+    push rbx
+    mov rdi, rbx
+    call x86_emit_expr        ; at runtime, rax = prompt_ptr
+    pop rbx
+
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x89
     call emit_byte
     mov sil, 0xC7
+    call emit_byte            ; mov rdi, rax
+
+    mov sil, 0x48
     call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte
+    mov esi, [rbx + ASTNode.val_len]
+    call emit_dword          ; mov rsi, prompt_len
+    jmp .do_input_call
+
+.input_no_prompt:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte            ; xor rdi, rdi
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xF6
+    call emit_byte            ; xor rsi, rsi
+
+.do_input_call:
+    mov rdi, r13
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.input_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+    jmp .done
+
+.call_print:
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr        ; rax = val, rdx = tag at runtime
+
+    ; Runtime check: cmp rdx, 3 (48 83 FA 03)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte
+
+    ; je .print_as_str (74 0D)
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x0D
+    call emit_byte
+
+    ; --- Print as int ---
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte            ; mov rdi, rax
 
     mov sil, 0xE8
     call emit_byte
     mov rax, [xstate + X86State.print_int_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+    jmp .done
+
+.print_as_str:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte            ; mov rdi, rax
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xF6
+    call emit_byte            ; xor rsi, rsi
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.print_str_off]
     mov rcx, [r13 + 16]
     add rcx, 4
     sub rax, rcx

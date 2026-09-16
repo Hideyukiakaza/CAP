@@ -1,0 +1,5 @@
+EXIT: 139
+STDOUT:
+
+STDERR:
+qemu: uncaught target signal 11 (Segmentation fault) - core dumped

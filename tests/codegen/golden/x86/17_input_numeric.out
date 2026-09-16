@@ -1,0 +1,5 @@
+EXIT: 101
+STDOUT:
+Enter a:
+STDERR:
+RuntimeError: type mismatch in arithmetic operation

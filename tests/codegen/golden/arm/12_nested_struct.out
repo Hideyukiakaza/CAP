@@ -1,6 +1,6 @@
-EXIT: 6
+EXIT: 8
 STDOUT:
-1
+0
 2
-3
+2
 STDERR:

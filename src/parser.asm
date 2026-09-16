@@ -13,6 +13,7 @@ s_type_is: db "Token type: ", 0
 s_line_is: db "Token line: ", 0
 s_val_is: db "Token val: ", 0
 s_prog_peek: db "Program peek token type: ", 0
+s_fstring: db "fstring", 0
 
 section .text
 global parse_program
@@ -540,8 +541,8 @@ parse_struct_decl_stmt:
     ret
 
 parse_defer_stmt:
-    call lexer_next_token
-    call parse_expr
+    call lexer_next_token          ; consume 'defer'
+    call parse_statement
     mov rbx, rax
     mov rdi, AST_DEFER
     call create_ast_node
@@ -1123,12 +1124,31 @@ parse_primary_expr:
 
 .p_lit:
     call lexer_next_token
+    mov rbx, rax
+    mov rdi, [rbx + Token.val]
+    mov rcx, [rbx + Token.len]
+    test rdi, rdi
+    jz .make_standard_lit
+    cmp rcx, 3
+    jl .make_standard_lit
+    cmp byte [rdi], 'f'
+    jne .make_standard_lit
+    cmp byte [rdi + 1], '"'
+    je .parse_fstr
+
+.make_standard_lit:
     mov rdi, AST_LITERAL
     call create_ast_node
     mov rdx, [rbx + Token.val]
     mov rcx, [rbx + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
+    mov rbx, rax
+    jmp .postfix_loop
+
+.parse_fstr:
+    mov rdi, rbx
+    call parse_fstring
     mov rbx, rax
     jmp .postfix_loop
 
@@ -1144,21 +1164,14 @@ parse_primary_expr:
     jmp .p_ident_or_call_or_struct
 
 .p_alloc:
-    call lexer_next_token
-    call lexer_next_token
-    call lexer_next_token
-    mov rbx, rax
-    call lexer_next_token
+    call lexer_next_token          ; consume 'alloc'
+    call lexer_next_token          ; consume '('
     call parse_expr
-    mov r12, rax
-    call lexer_next_token
+    mov r12, rax                   ; size expr
+    call lexer_next_token          ; consume ')'
 
     mov rdi, AST_ALLOC
     call create_ast_node
-    mov rdx, [rbx + Token.val]
-    mov rcx, [rbx + Token.len]
-    mov [rax + ASTNode.val], rdx
-    mov [rax + ASTNode.val_len], rcx
     mov [rax + ASTNode.child1], r12
     mov rbx, rax
     jmp .postfix_loop
@@ -1425,3 +1438,256 @@ consume_optional_newline:
 
 section .data
 range_str: db "range", 0
+
+section .text
+global parse_fstring
+parse_fstring:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov rbx, rdi             ; Token
+    mov r12, [rbx + Token.val]
+    mov r13, [rbx + Token.len]
+
+    ; Skip f" (add 2) and trailing " (sub 3)
+    add r12, 2
+    sub r13, 3
+
+    xor r14, r14             ; segment head
+    xor r15, r15             ; segment tail
+    xor rcx, rcx             ; curr idx
+    mov r8, r12              ; seg start ptr
+
+.fstr_scan:
+    cmp rcx, r13
+    jge .fstr_done_seg
+
+    mov al, [r12 + rcx]
+    cmp al, '{'
+    je .fstr_open_brace
+    cmp al, '}'
+    je .fstr_close_brace
+    inc rcx
+    jmp .fstr_scan
+
+.fstr_open_brace:
+    mov r9, rcx
+    inc r9
+    cmp r9, r13
+    jge .do_open_brace
+    cmp byte [r12 + r9], '{'
+    jne .do_open_brace
+
+    inc rcx
+    inc rcx
+    jmp .fstr_scan
+
+.do_open_brace:
+    mov r9, r12
+    add r9, rcx
+    sub r9, r8
+    jz .parse_expr_span
+
+    push rcx
+    push r8
+    mov rdi, AST_LITERAL
+    call create_ast_node
+    pop r8
+    pop rcx
+    mov [rax + ASTNode.val], r8
+    mov [rax + ASTNode.val_len], r9
+
+    test r15, r15
+    jnz .app_lit_seg
+    mov r14, rax
+    mov r15, rax
+    jmp .parse_expr_span
+.app_lit_seg:
+    mov [r15 + ASTNode.next], rax
+    mov r15, rax
+
+.parse_expr_span:
+    inc rcx                  ; skip '{'
+    mov r8, r12
+    add r8, rcx              ; expr_start_ptr
+    xor r9, r9               ; expr_len = 0
+
+.scan_close:
+    cmp rcx, r13
+    jge .finish_expr_span
+    mov al, [r12 + rcx]
+    cmp al, '}'
+    je .finish_expr_span
+    inc rcx
+    inc r9
+    jmp .scan_close
+
+.finish_expr_span:
+    cmp rcx, r13
+    jge .done_expr_parse
+    inc rcx                  ; skip '}'
+
+.done_expr_parse:
+    push rcx
+    push r8
+    push r9
+    mov rdi, r8
+    mov rsi, r9
+    call parse_span_expr
+    pop r9
+    pop r8
+    pop rcx
+
+    test r15, r15
+    jnz .app_expr_seg
+    mov r14, rax
+    mov r15, rax
+    jmp .reset_seg_start
+.app_expr_seg:
+    mov [r15 + ASTNode.next], rax
+    mov r15, rax
+
+.reset_seg_start:
+    mov r8, r12
+    add r8, rcx
+    jmp .fstr_scan
+
+.fstr_close_brace:
+    mov r9, rcx
+    inc r9
+    cmp r9, r13
+    jge .next_c_brace
+    cmp byte [r12 + r9], '}'
+    jne .next_c_brace
+    inc rcx
+.next_c_brace:
+    inc rcx
+    jmp .fstr_scan
+
+.fstr_done_seg:
+    mov r9, r12
+    add r9, r13
+    sub r9, r8
+    jz .build_fstr_node
+
+    push r8
+    push r9
+    mov rdi, AST_LITERAL
+    call create_ast_node
+    pop r9
+    pop r8
+    mov [rax + ASTNode.val], r8
+    mov [rax + ASTNode.val_len], r9
+
+    test r15, r15
+    jnz .app_tail_seg
+    mov r14, rax
+    mov r15, rax
+    jmp .build_fstr_node
+.app_tail_seg:
+    mov [r15 + ASTNode.next], rax
+    mov r15, rax
+
+.build_fstr_node:
+    mov rdi, AST_CALL
+    call create_ast_node
+    mov qword [rax + ASTNode.val], s_fstring
+    mov qword [rax + ASTNode.val_len], 7
+    mov [rax + ASTNode.child1], r14
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+
+parse_span_expr:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+
+    mov r12, rdi             ; span_ptr
+    mov r13, rsi             ; span_len
+
+    xor rcx, rcx
+.dot_search:
+    cmp rcx, r13
+    jge .no_dot
+    cmp byte [r12 + rcx], '.'
+    je .has_dot
+    inc rcx
+    jmp .dot_search
+
+.has_dot:
+    mov rbx, rcx             ; dot_pos
+    push rcx
+    push rbx
+    mov rdi, AST_IDENT
+    call create_ast_node
+    pop rbx
+    pop rcx
+    mov [rax + ASTNode.val], r12
+    mov [rax + ASTNode.val_len], rbx
+    mov rbx, rax             ; rbx = left AST_IDENT
+
+.dot_chain_loop:
+    inc rcx                  ; skip '.'
+    mov r8, r12
+    add r8, rcx              ; field name ptr
+    mov r9, r13
+    sub r9, rcx              ; remaining len
+
+    xor r10, r10
+.field_dot_search:
+    cmp r10, r9
+    jge .got_field_name
+    cmp byte [r8 + r10], '.'
+    je .got_field_name
+    inc r10
+    jmp .field_dot_search
+
+.got_field_name:
+    push rcx
+    push r10
+    push r8
+    mov rdi, AST_FIELD_ACCESS
+    call create_ast_node
+    pop r8
+    pop r10
+    pop rcx
+    mov [rax + ASTNode.val], r8
+    mov [rax + ASTNode.val_len], r10
+    mov [rax + ASTNode.child1], rbx
+    mov rbx, rax
+
+    add rcx, r10
+    cmp rcx, r13
+    jl .dot_chain_loop
+
+    mov rax, rbx
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.no_dot:
+    mov rdi, AST_IDENT
+    call create_ast_node
+    mov [rax + ASTNode.val], r12
+    mov [rax + ASTNode.val_len], r13
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret

@@ -120,6 +120,14 @@ tokenize_source:
     jle .lex_number
 .not_digit:
 
+    mov rsi, [src_ptr]
+    mov al, [rsi]
+    cmp al, 'f'
+    jne .not_fstr
+    cmp byte [rsi + 1], '"'
+    je .lex_fstr_token
+
+.not_fstr:
     call is_alpha
     test rax, rax
     jnz .lex_ident_or_kw
@@ -127,6 +135,12 @@ tokenize_source:
     mov rsi, [src_ptr]
     mov al, [rsi]
 
+    cmp al, 'f'
+    jne .chk_quote
+    cmp byte [rsi + 1], '"'
+    je .lex_fstr_token
+
+.chk_quote:
     cmp al, '"'
     je .lex_string
 
@@ -168,6 +182,10 @@ tokenize_source:
 
 .lex_ident_or_kw:
     call lex_ident_token
+    jmp .lex_loop
+
+.lex_fstr_token:
+    call lex_fstring
     jmp .lex_loop
 
 .lex_string:
@@ -416,6 +434,36 @@ lex_number_token:
     pop r12
     pop rbx
     ret
+
+lex_fstring:
+    mov rsi, [src_ptr]
+    xor rcx, rcx
+    add rcx, 2               ; skip f"
+.fstr_loop:
+    mov al, [rsi + rcx]
+    test al, al
+    jz .err_fstr
+    cmp al, 10
+    je .err_fstr
+    cmp al, '"'
+    je .fstr_done
+    inc rcx
+    jmp .fstr_loop
+
+.fstr_done:
+    inc rcx                  ; include closing quote
+    mov rdi, TOKEN_STRING
+    mov rsi, [src_ptr]
+    mov rdx, rcx
+    call emit_token
+    add [src_ptr], rcx
+    ret
+
+.err_fstr:
+    mov rsi, err_unterm_string
+    call print_err
+    mov rdi, 1
+    call sys_exit
 
 lex_string_token:
     inc qword [src_ptr]
