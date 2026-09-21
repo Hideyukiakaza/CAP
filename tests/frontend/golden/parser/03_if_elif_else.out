@@ -1,0 +1,25 @@
+EXIT: 0
+STDOUT:
+Program
+  If
+    BinOp >
+      Ident x
+      Literal 10
+    Block
+      ExprStmt
+        Call print
+          Literal big
+  Elif
+    BinOp ==
+      Ident x
+      Literal 10
+    Block
+      ExprStmt
+        Call print
+          Literal equal
+  Else
+    Block
+      ExprStmt
+        Call print
+          Literal small
+STDERR:

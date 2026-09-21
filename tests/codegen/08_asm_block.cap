@@ -1,0 +1,5 @@
+fn main():
+    x = 42
+    asm:
+        mov rax, 42
+    return x

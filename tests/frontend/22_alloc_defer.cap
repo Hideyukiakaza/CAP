@@ -1,0 +1,4 @@
+fn test_alloc_defer():
+    p = alloc(128)
+    defer print(42)
+    return p

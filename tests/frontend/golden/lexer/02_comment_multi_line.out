@@ -1,0 +1,15 @@
+EXIT: 0
+STDOUT:
+Tok type: 1 val: 
+Tok type: 4 val: Second
+Tok type: 4 val: line
+Tok type: 1 val: 
+Tok type: 4 val: End
+Tok type: 4 val: line
+Tok type: 1 val: 
+Tok type: 4 val: x
+Tok type: 9 val: =
+Tok type: 5 val: 10
+Tok type: 1 val: 
+Tok type: 0 val: 
+STDERR:

@@ -1,0 +1,7 @@
+EXIT: 0
+STDOUT:
+Program
+  AsmBlock
+    ExprStmt
+    ExprStmt
+STDERR:

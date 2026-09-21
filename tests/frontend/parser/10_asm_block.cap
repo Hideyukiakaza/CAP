@@ -1,0 +1,3 @@
+asm:
+    mov rax, 1
+    syscall

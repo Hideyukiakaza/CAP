@@ -1,0 +1,9 @@
+struct Point:
+    x: Int
+    y: Int
+
+fn main():
+    p = Point{x: 10, y: 32}
+    s = f"Point({p.x}, {p.y})"
+    print(s)
+    return 0

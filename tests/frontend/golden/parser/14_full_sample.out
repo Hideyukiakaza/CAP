@@ -1,0 +1,87 @@
+EXIT: 0
+STDOUT:
+Program
+  VarDecl x
+    Literal 10
+  VarDecl y
+    Literal 10.5
+  VarDecl name
+    Literal cap
+  ConstDecl PI
+    Literal 3.14159
+  FnDecl add
+    Param a
+    Param b
+    Block
+      Return
+        BinOp +
+          Ident a
+          Ident b
+  If
+    BinOp >
+      Ident x
+      Literal 10
+    Block
+      ExprStmt
+        Call print
+          Literal big
+  Elif
+    BinOp ==
+      Ident x
+      Literal 10
+    Block
+      ExprStmt
+        Call print
+          Literal equal
+  Else
+    Block
+      ExprStmt
+        Call print
+          Literal small
+  For i
+    Literal 10
+    Block
+      ExprStmt
+        Call print
+          Ident i
+  For i
+    Call range
+      Literal 2
+      Literal 10
+      Literal 2
+    Block
+      ExprStmt
+        Call print
+          Ident i
+  While
+    BinOp >
+      Ident x
+      Literal 0
+    Block
+      VarDecl x
+        BinOp -
+          Ident x
+          Literal 1
+  Loop
+    Block
+      If
+        Ident done
+        Block
+          Break
+  StructDecl Vec3
+    FieldDecl x
+    FieldDecl y
+    FieldDecl z
+  VarDecl v
+    StructLit Vec3
+      FieldInit x
+        Literal 1.0
+      FieldInit y
+        Literal 2.0
+      FieldInit z
+        Literal 3.0
+  AsmBlock
+    ExprStmt
+    ExprStmt
+  Import cap_module
+STDERR:

@@ -1,0 +1,5 @@
+EXIT: 1
+STDOUT:
+
+STDERR:
+SyntaxError: Tabs are not allowed for indentation

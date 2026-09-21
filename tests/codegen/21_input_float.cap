@@ -1,0 +1,3 @@
+fn main():
+    a = input("Enter float: ")
+    return 0

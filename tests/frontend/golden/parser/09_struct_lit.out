@@ -1,0 +1,12 @@
+EXIT: 0
+STDOUT:
+Program
+  VarDecl v
+    StructLit Vec3
+      FieldInit x
+        Literal 1.0
+      FieldInit y
+        Literal 2.0
+      FieldInit z
+        Literal 3.0
+STDERR:

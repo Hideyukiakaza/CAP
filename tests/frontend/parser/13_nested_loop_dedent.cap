@@ -1,0 +1,6 @@
+loop:
+    if done:
+        break
+
+struct Vec3:
+    x: f32

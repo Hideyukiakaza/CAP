@@ -1,0 +1,14 @@
+struct Inner:
+    a: int
+    b: int
+
+struct Outer:
+    inner: Inner
+    c: int
+
+fn main():
+    o = Outer{inner: Inner{a: 1, b: 2}, c: 3}
+    print(o.inner.a)
+    print(o.inner.b)
+    print(o.c)
+    return o.inner.a + o.inner.b + o.c

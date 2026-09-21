@@ -1,0 +1,14 @@
+EXIT: 0
+STDOUT:
+Program
+  VarDecl v
+    StructLit Outer
+      FieldInit inner
+        StructLit Inner
+          FieldInit a
+            Literal 1
+          FieldInit b
+            Literal 2
+      FieldInit c
+        Literal 3
+STDERR:

@@ -1,0 +1,2 @@
+fn sum_point(p: Point):
+    return p.x + p.y

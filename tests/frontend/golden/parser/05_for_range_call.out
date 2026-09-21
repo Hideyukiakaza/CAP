@@ -1,0 +1,13 @@
+EXIT: 0
+STDOUT:
+Program
+  For i
+    Call range
+      Literal 2
+      Literal 10
+      Literal 2
+    Block
+      ExprStmt
+        Call print
+          Ident i
+STDERR:

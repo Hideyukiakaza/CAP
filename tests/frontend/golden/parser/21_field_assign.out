@@ -1,0 +1,8 @@
+EXIT: 0
+STDOUT:
+Program
+  FieldAssign x
+    Literal 5
+    FieldAccess x
+      Ident p
+STDERR:

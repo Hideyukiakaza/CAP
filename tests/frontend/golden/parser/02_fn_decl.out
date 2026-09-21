@@ -1,0 +1,12 @@
+EXIT: 0
+STDOUT:
+Program
+  FnDecl add
+    Param a
+    Param b
+    Block
+      Return
+        BinOp +
+          Ident a
+          Ident b
+STDERR:

@@ -1,0 +1,8 @@
+EXIT: 0
+STDOUT:
+Program
+  ExprStmt
+    FieldAccess x
+      FieldAccess inner
+        Ident outer
+STDERR:

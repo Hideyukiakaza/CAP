@@ -1,0 +1,8 @@
+fn main():
+    x = 10
+    if x > 20:
+        return 1
+    elif x == 10:
+        return 42
+    else:
+        return 2
