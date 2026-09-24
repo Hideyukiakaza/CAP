@@ -1,0 +1,12 @@
+struct Point:
+    x: Int
+    y: Int
+
+fn sum(a: Int, b: Int):
+    return a + b
+
+fn main():
+    p = Point{x: 10, y: 32}
+    print(f"Sum: {p.x + p.y}")
+    print(f"Fn: {sum(p.x, p.y)}")
+    return 0

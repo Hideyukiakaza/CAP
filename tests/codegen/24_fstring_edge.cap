@@ -1,0 +1,8 @@
+fn main():
+    s1 = f""
+    s2 = f"literal only"
+    print(s1)
+    print(s2)
+    print(f"")
+    print(f"inline literal")
+    return 0

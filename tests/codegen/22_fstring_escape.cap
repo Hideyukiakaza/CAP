@@ -1,0 +1,5 @@
+fn main():
+    x = 42
+    s = f"{{literal {x} braces}}"
+    print(s)
+    return 0
