@@ -88,9 +88,8 @@ EOF
     if [ "$MODE" = "--update" ]; then
         mkdir -p "$ROOT/golden/x86"
         echo "$actual_x86" > "$golden_x86"
-        if [ -f "$golden_arm" ]; then
-            echo "$actual_arm" > "$golden_arm"
-        fi
+        mkdir -p "$ROOT/golden/arm"
+        echo "$actual_arm" > "$golden_arm"
         echo "UPDATED  $base"
         return
     fi
