@@ -49,7 +49,78 @@ indent_sp:    resq 1
 
 section .text
 global tokenize_source, lexer_next_token, lexer_peek_token, lexer_rewind, dump_tokens_debug, lookup_keyword
+global save_lexer_state, restore_lexer_state
 extern malloc_bytes, print_err, print_str, print_char, print_num, sys_write, sys_exit, str_ncmp, str_cmp, str_len
+
+save_lexer_state:
+    mov rax, [lexer_tokens]
+    mov [rdi + LexerState.tokens], rax
+    mov rax, [lexer_token_count]
+    mov [rdi + LexerState.token_count], rax
+    mov rax, [lexer_token_capacity]
+    mov [rdi + LexerState.token_capacity], rax
+    mov rax, [lexer_token_idx]
+    mov [rdi + LexerState.token_idx], rax
+    mov rax, [src_ptr]
+    mov [rdi + LexerState.src_ptr], rax
+    mov rax, [src_start]
+    mov [rdi + LexerState.src_start], rax
+    mov rax, [line_num]
+    mov [rdi + LexerState.line_num], rax
+    mov al, [at_line_start]
+    mov [rdi + LexerState.at_line_start], al
+    mov al, [in_asm_block]
+    mov [rdi + LexerState.in_asm_block], al
+    mov rax, [asm_indent_level]
+    mov [rdi + LexerState.asm_indent], rax
+    mov rax, [indent_sp]
+    mov [rdi + LexerState.indent_sp], rax
+
+    lea rsi, [indent_stack]
+    lea rdx, [rdi + LexerState.indent_stack]
+    mov rcx, 64
+.copy_ind:
+    mov rax, [rsi]
+    mov [rdx], rax
+    add rsi, 8
+    add rdx, 8
+    loop .copy_ind
+    ret
+
+restore_lexer_state:
+    mov rax, [rdi + LexerState.tokens]
+    mov [lexer_tokens], rax
+    mov rax, [rdi + LexerState.token_count]
+    mov [lexer_token_count], rax
+    mov rax, [rdi + LexerState.token_capacity]
+    mov [lexer_token_capacity], rax
+    mov rax, [rdi + LexerState.token_idx]
+    mov [lexer_token_idx], rax
+    mov rax, [rdi + LexerState.src_ptr]
+    mov [src_ptr], rax
+    mov rax, [rdi + LexerState.src_start]
+    mov [src_start], rax
+    mov rax, [rdi + LexerState.line_num]
+    mov [line_num], rax
+    mov al, [rdi + LexerState.at_line_start]
+    mov [at_line_start], al
+    mov al, [rdi + LexerState.in_asm_block]
+    mov [in_asm_block], al
+    mov rax, [rdi + LexerState.asm_indent]
+    mov [asm_indent_level], rax
+    mov rax, [rdi + LexerState.indent_sp]
+    mov [indent_sp], rax
+
+    lea rsi, [rdi + LexerState.indent_stack]
+    lea rdx, [indent_stack]
+    mov rcx, 64
+.rest_ind:
+    mov rax, [rsi]
+    mov [rdx], rax
+    add rsi, 8
+    add rdx, 8
+    loop .rest_ind
+    ret
 
 tokenize_source:
     push rbx
