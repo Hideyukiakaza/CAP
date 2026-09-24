@@ -117,6 +117,23 @@ arm_emit_program:
     mov rdi, r13
     call emit_arm_format_int
 
+    ; Dynamically patch inter-stub call in _stub_arm_input calling _stub_arm_alloc.
+    ; Offset +0x44 in _stub_arm_input is 'bl alloc' (0x94000000).
+    ; rel_words = (alloc_off - (input_off + 0x44)) >> 2
+    mov rax, [armstate + ArmState.alloc_off]
+    mov rcx, [armstate + ArmState.input_off]
+    add rcx, 0x44            ; input_off + 0x44
+    sub rax, rcx             ; disp_bytes
+    sar rax, 2               ; disp_words
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d              ; patched BL instruction dword
+    mov rdi, r13             ; code_buf
+    mov rsi, [armstate + ArmState.input_off]
+    add rsi, 0x44            ; patch offset
+    mov rdx, rax             ; patch dword value
+    call patch_dword
+
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
 .fn_loop:
@@ -1238,8 +1255,8 @@ arm_emit_expr:
     ; str x1, [sp, #-16]! -> 0xF81F0FE1 (push updated curr_buf_ptr)
     EMIT_ARM 0xF81F0FE1
 
-    ; b .fstr_next (+4 words -> 0x14000004)
-    EMIT_ARM 0x14000004
+    ; b .fstr_next (+8 words -> 0x14000008)
+    EMIT_ARM 0x14000008
 
 .fstr_copy_str_arm:
     ; ldr x2, [sp], #16 -> 0xF84107E2 (pop curr_buf_ptr into x2)
