@@ -48,3 +48,19 @@ struc Token
     .len:  resq 1
     .line: resq 1
 endstruc
+
+struc LexerState
+    .tokens:         resq 1
+    .token_count:    resq 1
+    .token_capacity: resq 1
+    .token_idx:      resq 1
+    .src_ptr:        resq 1
+    .src_start:      resq 1
+    .line_num:       resq 1
+    .at_line_start:  resb 1
+    .in_asm_block:   resb 1
+    .pad:            resb 6
+    .asm_indent:     resq 1
+    .indent_sp:      resq 1
+    .indent_stack:   resq 64
+endstruc
