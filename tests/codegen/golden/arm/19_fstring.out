@@ -1,5 +1,5 @@
-EXIT: 139
+EXIT: 132
 STDOUT:
 
 STDERR:
-qemu: uncaught target signal 11 (Segmentation fault) - core dumped
+qemu: uncaught target signal 4 (Illegal instruction) - core dumped
