@@ -17,7 +17,8 @@ s_fstring: db "fstring", 0
 
 section .text
 global parse_program
-extern lexer_next_token, lexer_peek_token, lexer_rewind, lookup_keyword
+extern tokenize_source, lexer_next_token, lexer_peek_token, lexer_rewind, lookup_keyword
+extern save_lexer_state, restore_lexer_state, malloc_bytes
 extern create_ast_node, print_err, print_str, sys_exit, sys_write, print_char, print_num
 
 parse_program:
@@ -1440,6 +1441,81 @@ section .data
 range_str: db "range", 0
 
 section .text
+create_unescaped_literal_node:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi             ; seg_start_ptr
+    mov r13, rsi             ; seg_len
+
+    mov rdi, r13
+    inc rdi
+    call malloc_bytes
+    mov r14, rax             ; r14 = unescaped_buf
+
+    xor r15, r15             ; src_i = 0
+    xor rbx, rbx             ; dst_i = 0
+
+.unescape_loop:
+    cmp r15, r13
+    jge .unescape_done
+
+    mov al, [r12 + r15]
+    cmp al, '{'
+    jne .chk_close
+    mov r8, r15
+    inc r8
+    cmp r8, r13
+    jge .copy_char
+    cmp byte [r12 + r8], '{'
+    jne .copy_char
+    mov byte [r14 + rbx], '{'
+    inc rbx
+    add r15, 2
+    jmp .unescape_loop
+
+.chk_close:
+    cmp al, '}'
+    jne .copy_char
+    mov r8, r15
+    inc r8
+    cmp r8, r13
+    jge .copy_char
+    cmp byte [r12 + r8], '}'
+    jne .copy_char
+    mov byte [r14 + rbx], '}'
+    inc rbx
+    add r15, 2
+    jmp .unescape_loop
+
+.copy_char:
+    mov [r14 + rbx], al
+    inc rbx
+    inc r15
+    jmp .unescape_loop
+
+.unescape_done:
+    mov byte [r14 + rbx], 0
+
+    mov rdi, AST_LITERAL
+    call create_ast_node
+    mov [rax + ASTNode.val], r14
+    mov [rax + ASTNode.val_len], rbx
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+
 global parse_fstring
 parse_fstring:
     push rbp
@@ -1483,8 +1559,8 @@ parse_fstring:
     cmp byte [r12 + r9], '{'
     jne .do_open_brace
 
-    inc rcx
-    inc rcx
+    ; Escaped {{
+    add rcx, 2
     jmp .fstr_scan
 
 .do_open_brace:
@@ -1495,12 +1571,11 @@ parse_fstring:
 
     push rcx
     push r8
-    mov rdi, AST_LITERAL
-    call create_ast_node
+    mov rdi, r8
+    mov rsi, r9
+    call create_unescaped_literal_node
     pop r8
     pop rcx
-    mov [rax + ASTNode.val], r8
-    mov [rax + ASTNode.val_len], r9
 
     test r15, r15
     jnz .app_lit_seg
@@ -1516,13 +1591,23 @@ parse_fstring:
     mov r8, r12
     add r8, rcx              ; expr_start_ptr
     xor r9, r9               ; expr_len = 0
+    mov r10, 1               ; brace_depth = 1
 
 .scan_close:
     cmp rcx, r13
     jge .finish_expr_span
     mov al, [r12 + rcx]
+    cmp al, '{'
+    jne .chk_rbrace
+    inc r10
+    jmp .inc_expr
+.chk_rbrace:
     cmp al, '}'
-    je .finish_expr_span
+    jne .inc_expr
+    dec r10
+    jz .finish_expr_span
+
+.inc_expr:
     inc rcx
     inc r9
     jmp .scan_close
@@ -1577,12 +1662,11 @@ parse_fstring:
 
     push r8
     push r9
-    mov rdi, AST_LITERAL
-    call create_ast_node
+    mov rdi, r8
+    mov rsi, r9
+    call create_unescaped_literal_node
     pop r9
     pop r8
-    mov [rax + ASTNode.val], r8
-    mov [rax + ASTNode.val_len], r9
 
     test r15, r15
     jnz .app_tail_seg
@@ -1615,77 +1699,41 @@ parse_span_expr:
     push rbx
     push r12
     push r13
+    sub rsp, 600
 
     mov r12, rdi             ; span_ptr
     mov r13, rsi             ; span_len
 
-    xor rcx, rcx
-.dot_search:
-    cmp rcx, r13
-    jge .no_dot
-    cmp byte [r12 + rcx], '.'
-    je .has_dot
-    inc rcx
-    jmp .dot_search
-
-.has_dot:
-    mov rbx, rcx             ; dot_pos
-    push rcx
-    push rbx
-    mov rdi, AST_IDENT
-    call create_ast_node
-    pop rbx
-    pop rcx
-    mov [rax + ASTNode.val], r12
-    mov [rax + ASTNode.val_len], rbx
-    mov rbx, rax             ; rbx = left AST_IDENT
-
-.dot_chain_loop:
-    inc rcx                  ; skip '.'
-    mov r8, r12
-    add r8, rcx              ; field name ptr
-    mov r9, r13
-    sub r9, rcx              ; remaining len
-
-    xor r10, r10
-.field_dot_search:
-    cmp r10, r9
-    jge .got_field_name
-    cmp byte [r8 + r10], '.'
-    je .got_field_name
-    inc r10
-    jmp .field_dot_search
-
-.got_field_name:
-    push rcx
-    push r10
-    push r8
-    mov rdi, AST_FIELD_ACCESS
-    call create_ast_node
-    pop r8
-    pop r10
-    pop rcx
-    mov [rax + ASTNode.val], r8
-    mov [rax + ASTNode.val_len], r10
-    mov [rax + ASTNode.child1], rbx
+    mov rdi, r13
+    inc rdi
+    call malloc_bytes
     mov rbx, rax
 
-    add rcx, r10
+    xor rcx, rcx
+.copy_span:
     cmp rcx, r13
-    jl .dot_chain_loop
+    jge .span_copied
+    mov al, [r12 + rcx]
+    mov [rbx + rcx], al
+    inc rcx
+    jmp .copy_span
+.span_copied:
+    mov byte [rbx + r13], 0
 
-    mov rax, rbx
-    pop r13
-    pop r12
-    pop rbx
-    pop rbp
-    ret
+    mov rdi, rsp
+    call save_lexer_state
 
-.no_dot:
-    mov rdi, AST_IDENT
-    call create_ast_node
-    mov [rax + ASTNode.val], r12
-    mov [rax + ASTNode.val_len], r13
+    mov rdi, rbx
+    call tokenize_source
+
+    call parse_expr
+    mov r12, rax
+
+    mov rdi, rsp
+    call restore_lexer_state
+
+    mov rax, r12
+    add rsp, 600
     pop r13
     pop r12
     pop rbx
