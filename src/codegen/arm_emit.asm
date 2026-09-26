@@ -1255,8 +1255,8 @@ arm_emit_expr:
     ; str x1, [sp, #-16]! -> 0xF81F0FE1 (push updated curr_buf_ptr)
     EMIT_ARM 0xF81F0FE1
 
-    ; b .fstr_next (+8 words -> 0x14000008)
-    EMIT_ARM 0x14000008
+    ; b .fstr_next (+7 words -> 0x14000007)
+    EMIT_ARM 0x14000007
 
 .fstr_copy_str_arm:
     ; ldr x2, [sp], #16 -> 0xF84107E2 (pop curr_buf_ptr into x2)
@@ -1283,8 +1283,8 @@ arm_emit_expr:
 .fstr_done_arm:
     ; ldr x2, [sp], #16 -> 0xF84107E2 (pop curr_buf_ptr)
     EMIT_ARM 0xF84107E2
-    ; strb wzr, [x2] -> 0x3900001F
-    EMIT_ARM 0x3900001F
+    ; strb wzr, [x2] -> 0x3900005F
+    EMIT_ARM 0x3900005F
 
     ; ldr x0, [sp], #16 -> 0xF84107E0 (pop buf_start into x0)
     EMIT_ARM 0xF84107E0
