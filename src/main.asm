@@ -4,11 +4,13 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-s_dump_ast:    db "--dump-ast", 0
-s_dump_tokens: db "--dump-tokens", 0
-s_flag_a:      db "-a", 0
-s_flag_o:      db "-o", 0
-err_usage:     db "Usage: capc [-a] [-o <outfile>] [--dump-ast] <filename.cap>", 10, 0
+s_dump_ast:          db "--dump-ast", 0
+s_dump_tokens:       db "--dump-tokens", 0
+s_flag_a:            db "-a", 0
+s_flag_o:            db "-o", 0
+s_flag_freestanding: db "--freestanding", 0
+s_flag_k:            db "-k", 0
+err_usage:           db "Usage: capc [-a] [--freestanding|-k] [-o <outfile>] [--dump-ast] <filename.cap>", 10, 0
 err_open:      db "Error: Could not open source file", 10, 0
 err_read:      db "Error: Could not read source file", 10, 0
 err_missing_o: db "Error: -o flag requires an output filename argument", 10, 0
@@ -54,8 +56,26 @@ _start:
     mov rsi, s_flag_a
     call str_cmp
     test rax, rax
-    jnz .chk_o
+    jnz .chk_k
     mov qword [target_arch], TARGET_ARM64
+    jmp .parse_args_loop
+
+.chk_k:
+    mov rdi, rbx
+    mov rsi, s_flag_k
+    call str_cmp
+    test rax, rax
+    jnz .chk_freestanding
+    mov qword [target_arch], TARGET_FREESTANDING
+    jmp .parse_args_loop
+
+.chk_freestanding:
+    mov rdi, rbx
+    mov rsi, s_flag_freestanding
+    call str_cmp
+    test rax, rax
+    jnz .chk_o
+    mov qword [target_arch], TARGET_FREESTANDING
     jmp .parse_args_loop
 
 .chk_o:
