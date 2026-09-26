@@ -133,6 +133,57 @@ parse_dec_int:
     push rsi
     xor rax, rax
     xor rbx, rbx
+
+    test rcx, rcx
+    jz .p_done
+
+    cmp byte [rdi], '0'
+    jne .p_loop
+    cmp rcx, 2
+    jl .p_loop
+    mov bl, [rdi + 1]
+    cmp bl, 'x'
+    je .is_hex
+    cmp bl, 'X'
+    jne .p_loop
+
+.is_hex:
+    add rdi, 2
+    sub rcx, 2
+
+.hex_loop:
+    test rcx, rcx
+    jz .p_done
+    mov bl, [rdi]
+    cmp bl, '0'
+    jl .p_done
+    cmp bl, '9'
+    jle .hex_digit
+    cmp bl, 'A'
+    jl .chk_hex_lower
+    cmp bl, 'F'
+    jle .hex_upper
+.chk_hex_lower:
+    cmp bl, 'a'
+    jl .p_done
+    cmp bl, 'f'
+    jg .p_done
+    sub bl, 'a'
+    add bl, 10
+    jmp .hex_accum
+.hex_upper:
+    sub bl, 'A'
+    add bl, 10
+    jmp .hex_accum
+.hex_digit:
+    sub bl, '0'
+.hex_accum:
+    shl rax, 4
+    add rax, rbx
+    inc rdi
+    dec rcx
+    jmp .hex_loop
+
 .p_loop:
     test rcx, rcx
     jz .p_done
@@ -147,6 +198,7 @@ parse_dec_int:
     inc rdi
     dec rcx
     jmp .p_loop
+
 .p_done:
     pop rsi
     pop rbx
