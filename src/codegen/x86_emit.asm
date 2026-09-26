@@ -5,7 +5,10 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
+err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop, out, in", 10, 0
+err_freestanding_print: db "'print' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
+err_freestanding_input: db "'input' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
+err_freestanding_alloc: db "'alloc' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
 s_print:             db "print", 0
 s_input:             db "input", 0
 s_fstring:           db "fstring", 0
@@ -17,6 +20,11 @@ s_add:               db "add", 0
 s_sub:               db "sub", 0
 s_push:              db "push", 0
 s_pop:               db "pop", 0
+s_out:               db "out", 0
+s_in:                db "in", 0
+s_dx:                db "dx", 0
+s_al:                db "al", 0
+s_eax:               db "eax", 0
 
 section .text
 global x86_emit_program
@@ -25,7 +33,7 @@ extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
-extern print_err, sys_exit, str_ncmp, parse_dec_int
+extern print_err, sys_exit, str_ncmp, parse_dec_int, target_arch
 
 struc X86State
     .code_buf:     resq 1
@@ -66,6 +74,10 @@ x86_emit_program:
     mov [xstate + X86State.code_buf], r13
     mov [xstate + X86State.ast_root], r12
     call fn_sym_init
+
+    ; Check if freestanding mode
+    cmp qword [target_arch], TARGET_FREESTANDING
+    je .emit_freestanding_start
 
     ; 1. Emit _start sequence at offset 0
     ; call main (E8 <rel32>) - place-holder rel32 = 0
@@ -158,6 +170,54 @@ x86_emit_program:
     mov rdx, rax             ; rel32
     call patch_dword
 
+    jmp .emit_fns
+
+.emit_freestanding_start:
+    ; Freestanding mode _start:
+    ; call main (E8 <rel32>) - placeholder rel32 at offset 1
+    mov rdi, r13
+    mov sil, 0xE8
+    call emit_byte
+    mov rdi, r13
+    xor rsi, rsi
+    call emit_dword          ; offset 1 is rel32 for main
+
+    ; QEMU ACPI shutdown: mov dx, 0x604; mov ax, 0x2000; out dx, ax
+    mov rdi, r13
+    mov sil, 0x66
+    call emit_byte
+    mov sil, 0xBA
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+    mov sil, 0x06
+    call emit_byte
+
+    mov sil, 0x66
+    call emit_byte
+    mov sil, 0xB8
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte
+    mov sil, 0x20
+    call emit_byte
+
+    mov sil, 0x66
+    call emit_byte
+    mov sil, 0xEF
+    call emit_byte
+
+    ; Halt loop: cli; hlt; jmp -3 (FA F4 EB FD)
+    mov sil, 0xFA            ; cli
+    call emit_byte
+    mov sil, 0xF4            ; hlt
+    call emit_byte
+    mov sil, 0xEB            ; jmp
+    call emit_byte
+    mov sil, 0xFD            ; -3 bytes
+    call emit_byte
+
+.emit_fns:
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
 .fn_loop:
@@ -1305,6 +1365,8 @@ x86_emit_expr:
     jmp .done
 
 .e_alloc:
+    cmp qword [target_arch], TARGET_FREESTANDING
+    je err_free_alloc
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr
     mov rdi, r13
@@ -2135,6 +2197,8 @@ x86_emit_expr:
     jmp .done
 
 .call_input:
+    cmp qword [target_arch], TARGET_FREESTANDING
+    je err_free_input
     mov rbx, [r12 + ASTNode.child1]
     test rbx, rbx
     jz .input_no_prompt
@@ -2190,6 +2254,8 @@ x86_emit_expr:
     jmp .done
 
 .call_print:
+    cmp qword [target_arch], TARGET_FREESTANDING
+    je err_free_print
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr        ; rax = val, rdx = tag at runtime
 
@@ -2464,6 +2530,22 @@ x86_encode_asm_line:
     jmp .trim_loop
 
 .check_mnem:
+    ; Check "out"
+    mov rdi, r12
+    mov rsi, s_out
+    mov rdx, 3
+    call str_ncmp
+    test rax, rax
+    jz .do_out
+
+    ; Check "in"
+    mov rdi, r12
+    mov rsi, s_in
+    mov rdx, 2
+    call str_ncmp
+    test rax, rax
+    jz .do_in
+
     ; Check "syscall"
     mov rdi, r12
     mov rsi, s_syscall
@@ -2476,6 +2558,83 @@ x86_encode_asm_line:
     mov sil, 0x0F
     call emit_byte
     mov sil, 0x05
+    call emit_byte
+    jmp .done_line
+
+.do_out:
+    add r12, 3
+    sub r14, 3
+.trim_out:
+    cmp byte [r12], ' '
+    jne .check_out_src
+    inc r12
+    dec r14
+    jmp .trim_out
+.check_out_src:
+    ; skip "dx", trim spaces/comma
+    add r12, 2
+    sub r14, 2
+.trim_out_comma:
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_out_c
+    cmp al, ','
+    je .inc_out_c
+    jmp .check_out_reg
+.inc_out_c:
+    inc r12
+    dec r14
+    jmp .trim_out_comma
+.check_out_reg:
+    cmp byte [r12], 'a'
+    jne .asm_err
+    cmp byte [r12 + 1], 'l'
+    je .out_al
+    cmp byte [r12 + 1], 'x'
+    je .out_eax
+    cmp byte [r12 + 1], 'e'
+    je .chk_out_eax
+    jmp .asm_err
+.chk_out_eax:
+    cmp byte [r12 + 2], 'x'
+    je .out_eax
+    jmp .asm_err
+.out_al:
+    mov rdi, r13
+    mov sil, 0xEE
+    call emit_byte
+    jmp .done_line
+.out_eax:
+    mov rdi, r13
+    mov sil, 0xEF
+    call emit_byte
+    jmp .done_line
+
+.do_in:
+    add r12, 2
+    sub r14, 2
+.trim_in:
+    cmp byte [r12], ' '
+    jne .check_in_dest
+    inc r12
+    dec r14
+    jmp .trim_in
+.check_in_dest:
+    cmp byte [r12], 'a'
+    jne .asm_err
+    cmp byte [r12 + 1], 'l'
+    je .in_al
+    cmp byte [r12 + 1], 'e'
+    je .in_eax
+    jmp .asm_err
+.in_al:
+    mov rdi, r13
+    mov sil, 0xEC
+    call emit_byte
+    jmp .done_line
+.in_eax:
+    mov rdi, r13
+    mov sil, 0xED
     call emit_byte
     jmp .done_line
 
@@ -2511,6 +2670,16 @@ x86_encode_asm_line:
     jmp .trim_mov
 
 .parsed_mov:
+    cmp byte [r12], 'd'
+    jne .chk_mov_al
+    cmp byte [r12 + 1], 'x'
+    je .mov_dest_dx
+.chk_mov_al:
+    cmp byte [r12], 'a'
+    jne .chk_mov_r
+    cmp byte [r12 + 1], 'l'
+    je .mov_dest_al
+.chk_mov_r:
     cmp byte [r12], 'r'
     jne .asm_err
 
@@ -2521,6 +2690,68 @@ x86_encode_asm_line:
     je .mov_dest_rdi
 
     jmp .asm_err
+
+.mov_dest_dx:
+    mov rdi, r13
+    mov sil, 0x66
+    call emit_byte
+    mov sil, 0xBA
+    call emit_byte
+
+    add r12, 2
+    sub r14, 2
+.trim_dx_comma:
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_dx_c
+    cmp al, ','
+    je .inc_dx_c
+    jmp .parse_dx_imm
+.inc_dx_c:
+    inc r12
+    dec r14
+    jmp .trim_dx_comma
+.parse_dx_imm:
+    mov rdi, r12
+    mov rcx, r14
+    call parse_dec_int
+    push rax
+    mov rdi, r13
+    mov sil, al
+    call emit_byte
+    pop rax
+    shr rax, 8
+    mov rdi, r13
+    mov sil, al
+    call emit_byte
+    jmp .done_line
+
+.mov_dest_al:
+    mov rdi, r13
+    mov sil, 0xB0
+    call emit_byte
+
+    add r12, 2
+    sub r14, 2
+.trim_al_comma:
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_al_c
+    cmp al, ','
+    je .inc_al_c
+    jmp .parse_al_imm
+.inc_al_c:
+    inc r12
+    dec r14
+    jmp .trim_al_comma
+.parse_al_imm:
+    mov rdi, r12
+    mov rcx, r14
+    call parse_dec_int
+    mov rdi, r13
+    mov sil, al
+    call emit_byte
+    jmp .done_line
 
 .mov_dest_rax:
     mov rdi, r13
@@ -2657,6 +2888,24 @@ x86_encode_asm_line:
 
 .asm_err:
     mov rsi, err_unsupported_asm
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+err_free_print:
+    mov rsi, err_freestanding_print
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+err_free_input:
+    mov rsi, err_freestanding_input
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+err_free_alloc:
+    mov rsi, err_freestanding_alloc
     call print_err
     mov rdi, 1
     call sys_exit
