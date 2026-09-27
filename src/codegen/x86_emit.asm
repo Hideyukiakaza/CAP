@@ -50,6 +50,7 @@ struc X86State
     .loop_start:   resq 1
     .loop_end:     resq 1
     .ast_root:     resq 1
+    .is_curr_fn_main: resb 1
 endstruc
 
 section .bss
@@ -282,7 +283,11 @@ x86_emit_fn:
     jnz .not_main
     mov rax, [r13 + 16]      ; len
     mov [xstate + X86State.fn_main_off], rax
+    mov byte [xstate + X86State.is_curr_fn_main], 1
+    jmp .is_main_done
 .not_main:
+    mov byte [xstate + X86State.is_curr_fn_main], 0
+.is_main_done:
 
     ; Prologue:
     ; push rbp (55)
@@ -449,6 +454,24 @@ x86_emit_fn:
     mov rdi, [r12 + ASTNode.child2]
     call x86_emit_stmt
 
+    cmp qword [target_arch], TARGET_FREESTANDING
+    jne .body_std_epilogue
+    cmp byte [xstate + X86State.is_curr_fn_main], 1
+    jne .body_std_epilogue
+
+    ; Freestanding main fall-through epilogue: cli; hlt; jmp -3 (FA F4 EB FD)
+    mov rdi, r13
+    mov sil, 0xFA            ; cli
+    call emit_byte
+    mov sil, 0xF4            ; hlt
+    call emit_byte
+    mov sil, 0xEB            ; jmp
+    call emit_byte
+    mov sil, 0xFD            ; -3 bytes
+    call emit_byte
+    jmp .fn_done
+
+.body_std_epilogue:
     ; Epilogue:
     ; xor rax, rax (for default return 0 if falls through)
     mov rdi, r13
@@ -473,6 +496,7 @@ x86_emit_fn:
     mov sil, 0xC3
     call emit_byte
 
+.fn_done:
     pop r15
     pop r14
     pop r13
@@ -812,6 +836,24 @@ x86_emit_stmt:
     call emit_byte           ; pop rax (restore return val)
 
 .ret_epilogue:
+    cmp qword [target_arch], TARGET_FREESTANDING
+    jne .ret_std_epilogue
+    cmp byte [xstate + X86State.is_curr_fn_main], 1
+    jne .ret_std_epilogue
+
+    ; Freestanding main return epilogue: cli; hlt; jmp -3 (FA F4 EB FD)
+    mov rdi, r13
+    mov sil, 0xFA            ; cli
+    call emit_byte
+    mov sil, 0xF4            ; hlt
+    call emit_byte
+    mov sil, 0xEB            ; jmp
+    call emit_byte
+    mov sil, 0xFD            ; -3 bytes
+    call emit_byte
+    jmp .next
+
+.ret_std_epilogue:
     ; mov rsp, rbp (48 89 EC)
     mov rdi, r13
     mov sil, 0x48
