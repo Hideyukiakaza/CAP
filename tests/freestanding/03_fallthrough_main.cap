@@ -1,0 +1,9 @@
+fn main():
+    asm:
+        mov dx, 0x3F8
+        mov al, 0x4F
+        out dx, al
+        mov al, 0x4B
+        out dx, al
+        mov al, 0x0A
+        out dx, al

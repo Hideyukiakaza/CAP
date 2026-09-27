@@ -1,0 +1,14 @@
+fn emit_hi():
+    asm:
+        mov dx, 0x3F8
+        mov al, 0x48
+        out dx, al
+        mov al, 0x69
+        out dx, al
+        mov al, 0x0A
+        out dx, al
+    return 0
+
+fn main():
+    emit_hi()
+    return 0
