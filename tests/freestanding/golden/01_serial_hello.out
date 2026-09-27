@@ -1,4 +1,5 @@
-EXIT: 0
+EXIT: 124
 STDOUT:
 Hello from CAP kernel
 STDERR:
+qemu-system-x86_64: terminating on signal 15 from pid PID (timeout)
