@@ -5,7 +5,7 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop, out, in", 10, 0
+err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop, out, in, div, xor", 10, 0
 err_freestanding_print: db "'print' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
 err_freestanding_input: db "'input' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
 err_freestanding_alloc: db "'alloc' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
@@ -22,6 +22,9 @@ s_push:              db "push", 0
 s_pop:               db "pop", 0
 s_out:               db "out", 0
 s_in:                db "in", 0
+s_div:               db "div", 0
+s_xor:               db "xor", 0
+s_ecx:               db "ecx", 0
 s_dx:                db "dx", 0
 s_al:                db "al", 0
 s_eax:               db "eax", 0
@@ -2572,6 +2575,22 @@ x86_encode_asm_line:
     jmp .trim_loop
 
 .check_mnem:
+    ; Check "div"
+    mov rdi, r12
+    mov rsi, s_div
+    mov rdx, 3
+    call str_ncmp
+    test rax, rax
+    jz .do_div
+
+    ; Check "xor"
+    mov rdi, r12
+    mov rsi, s_xor
+    mov rdx, 3
+    call str_ncmp
+    test rax, rax
+    jz .do_xor
+
     ; Check "out"
     mov rdi, r12
     mov rsi, s_out
@@ -2652,6 +2671,55 @@ x86_encode_asm_line:
     call emit_byte
     jmp .done_line
 
+.do_div:
+    add r12, 3
+    sub r14, 3
+.trim_div:
+    cmp byte [r12], ' '
+    jne .check_div_reg
+    inc r12
+    dec r14
+    jmp .trim_div
+.check_div_reg:
+    mov rdi, r13
+    mov sil, 0xF7
+    call emit_byte
+    mov sil, 0xF1            ; div ecx (F7 F1)
+    call emit_byte
+    jmp .done_line
+
+.do_xor:
+    add r12, 3
+    sub r14, 3
+.trim_xor:
+    cmp byte [r12], ' '
+    jne .check_xor_reg
+    inc r12
+    dec r14
+    jmp .trim_xor
+.check_xor_reg:
+    cmp byte [r12], 'e'
+    je .xor_ecx
+    cmp byte [r12], 'r'
+    je .xor_rax
+    jmp .asm_err
+.xor_ecx:
+    mov rdi, r13
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC9            ; xor ecx, ecx (31 C9)
+    call emit_byte
+    jmp .done_line
+.xor_rax:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC0            ; xor rax, rax (48 31 C0)
+    call emit_byte
+    jmp .done_line
+
 .do_in:
     add r12, 2
     sub r14, 2
@@ -2712,6 +2780,8 @@ x86_encode_asm_line:
     jmp .trim_mov
 
 .parsed_mov:
+    cmp byte [r12], 'e'
+    je .mov_dest_eax
     cmp byte [r12], 'd'
     jne .chk_mov_al
     cmp byte [r12 + 1], 'x'
@@ -2766,6 +2836,33 @@ x86_encode_asm_line:
     mov rdi, r13
     mov sil, al
     call emit_byte
+    jmp .done_line
+
+.mov_dest_eax:
+    mov rdi, r13
+    mov sil, 0xB8
+    call emit_byte
+
+    add r12, 3
+    sub r14, 3
+.trim_eax_comma:
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_eax_c
+    cmp al, ','
+    je .inc_eax_c
+    jmp .parse_eax_imm
+.inc_eax_c:
+    inc r12
+    dec r14
+    jmp .trim_eax_comma
+.parse_eax_imm:
+    mov rdi, r12
+    mov rcx, r14
+    call parse_dec_int
+    mov rdi, r13
+    mov esi, eax
+    call emit_dword
     jmp .done_line
 
 .mov_dest_al:
