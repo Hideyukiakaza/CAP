@@ -21,7 +21,7 @@ run_one() {
     compile_status=$?
 
     if [ $compile_status -ne 0 ]; then
-        stderr_fs="$(cat /tmp/cap_test_stderr)"
+        stderr_fs="$(cat /tmp/cap_test_stderr | sed -E 's/pid [0-9]+/pid PID/g')"
         actual_fs="$(cat <<EOF
 EXIT: $compile_status
 STDOUT:
@@ -32,7 +32,7 @@ EOF
     else
         stdout_fs="$(timeout 10 qemu-system-x86_64 -kernel "$bin_fs" -serial stdio -display none -no-reboot 2>/tmp/cap_test_stderr)"
         exit_fs=$?
-        stderr_fs="$(cat /tmp/cap_test_stderr)"
+        stderr_fs="$(cat /tmp/cap_test_stderr | sed -E 's/pid [0-9]+/pid PID/g')"
         actual_fs="$(cat <<EOF
 EXIT: $exit_fs
 STDOUT:
