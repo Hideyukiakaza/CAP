@@ -1,0 +1,6 @@
+fn main():
+    asm:
+        mov eax, 1
+        xor ecx, ecx
+        div ecx
+    return 0

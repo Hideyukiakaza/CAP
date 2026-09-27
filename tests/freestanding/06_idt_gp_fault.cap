@@ -1,0 +1,6 @@
+fn main():
+    a = 0x0000800000000000
+    asm:
+        push rax
+        ret
+    return 0
