@@ -1,3 +1,4 @@
+/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100CE1
 fn main():
     asm:
         mov eax, 1

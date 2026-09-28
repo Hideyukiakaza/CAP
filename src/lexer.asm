@@ -695,19 +695,11 @@ lex_number_token:
 
 .err_malformed:
     mov rsi, [src_ptr]
-    xor rcx, rcx
 .scan_bad_run:
     mov al, [rsi + rcx]
-    test al, al
-    jz .print_bad_err
-    call is_ident_char_or_dot
+    call check_ident_or_dot
     test rax, rax
-    jnz .inc_bad_run
-    cmp al, '0'
-    jl .print_bad_err
-    cmp al, '9'
-    jle .inc_bad_run
-.inc_bad_run:
+    jz .print_bad_err
     inc rcx
     jmp .scan_bad_run
 
@@ -726,6 +718,31 @@ lex_number_token:
 
     mov rdi, 1
     call sys_exit
+
+check_ident_or_dot:
+    cmp al, '.'
+    je .id_yes
+    cmp al, '_'
+    je .id_yes
+    cmp al, '0'
+    jl .id_no
+    cmp al, '9'
+    jle .id_yes
+    cmp al, 'a'
+    jl .id_u
+    cmp al, 'z'
+    jle .id_yes
+.id_u:
+    cmp al, 'A'
+    jl .id_no
+    cmp al, 'Z'
+    jle .id_yes
+.id_no:
+    xor rax, rax
+    ret
+.id_yes:
+    mov rax, 1
+    ret
 
 lex_fstring:
     mov rsi, [src_ptr]

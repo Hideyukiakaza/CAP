@@ -1,4 +1,4 @@
-/*/ Expected: EXCEPTION: vector=13 err=0x0000000000000020 /*
+/*/ Expected: EXCEPTION: vector=13 err=0x0000000000000020 rip=0x0000000000100CDF
 fn main():
     asm:
         mov eax, 0x20

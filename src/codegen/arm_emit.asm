@@ -702,34 +702,60 @@ arm_emit_stmt:
     add qword [armstate + ArmState.stack_offset], 16
     mov [rbp - 16], rcx      ; [rbp - 16] = stop_off
 
-    ; Evaluate range stop expression
-    mov rdi, [r12 + ASTNode.child1]
-    mov rdi, [rdi + ASTNode.child1]
-    call arm_emit_expr       ; x0 = stop limit
+    ; Parse range args
+    mov rbx, [r12 + ASTNode.child1]
+    mov rbx, [rbx + ASTNode.child1] ; arg1
+    test rbx, rbx
+    jz .for_head
 
-    ; Store stop limit in [x29, #-stop_off]
+    mov r10, [rbx + ASTNode.next]   ; arg2
+    test r10, r10
+    jnz .range_2_args_arm
+
+    ; 1 arg: range(stop)
+    mov rdi, rbx
+    call arm_emit_expr
     mov rcx, [rbp - 16]
     mov rax, rcx
     neg rax
     and eax, 0x1FF
     shl eax, 12
-    mov r8d, 0xF80003A0
-    or eax, r8d              ; stur x0, [x29, #-stop_off]
+    or eax, 0xF80003A0
     EMIT_ARM eax
 
-    ; Initialize loop var = 0 -> stur xzr, [x29, #-i_off]
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
     and eax, 0x1FF
     shl eax, 12
-    mov r8d, 0xF80003BF
-    or eax, r8d              ; stur xzr, [x29, #-i_off]
+    or eax, 0xF80003BF
+    EMIT_ARM eax
+    jmp .for_head
+
+.range_2_args_arm:
+    ; 2 args: range(start, stop)
+    mov rdi, rbx
+    call arm_emit_expr
+    mov rcx, [rbp - 8]
+    mov rax, rcx
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    or eax, 0xF80003A0
     EMIT_ARM eax
 
-    mov rbx, [r13 + 16]      ; loop_start
+    mov rdi, r10
+    call arm_emit_expr
+    mov rcx, [rbp - 16]
+    mov rax, rcx
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    or eax, 0xF80003A0
+    EMIT_ARM eax
 
 .for_head:
+    mov rbx, [r13 + 16]      ; loop_start
     ; Load loop var into x0: ldur x0, [x29, #-i_off]
     mov rcx, [rbp - 8]
     mov rax, rcx
