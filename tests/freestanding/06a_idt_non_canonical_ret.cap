@@ -1,0 +1,7 @@
+/*/ Expected: EXCEPTION: vector=13 err=0x0000000000000000 rip=0x0000800000000000 /*
+fn main():
+    asm:
+        mov rax, 0x800000000000
+        push rax
+        ret
+    return 0

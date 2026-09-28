@@ -36,7 +36,7 @@ extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
-extern print_err, sys_exit, str_ncmp, parse_dec_int, target_arch
+extern print_err, sys_exit, str_ncmp, parse_dec_int, parse_int_literal, target_arch
 
 struc X86State
     .code_buf:     resq 1
@@ -186,32 +186,8 @@ x86_emit_program:
     xor rsi, rsi
     call emit_dword          ; offset 1 is rel32 for main
 
-    ; QEMU ACPI shutdown: mov dx, 0x604; mov ax, 0x2000; out dx, ax
-    mov rdi, r13
-    mov sil, 0x66
-    call emit_byte
-    mov sil, 0xBA
-    call emit_byte
-    mov sil, 0x04
-    call emit_byte
-    mov sil, 0x06
-    call emit_byte
-
-    mov sil, 0x66
-    call emit_byte
-    mov sil, 0xB8
-    call emit_byte
-    mov sil, 0x00
-    call emit_byte
-    mov sil, 0x20
-    call emit_byte
-
-    mov sil, 0x66
-    call emit_byte
-    mov sil, 0xEF
-    call emit_byte
-
     ; Halt loop: cli; hlt; jmp -3 (FA F4 EB FD)
+    mov rdi, r13
     mov sil, 0xFA            ; cli
     call emit_byte
     mov sil, 0xF4            ; hlt
@@ -2014,12 +1990,48 @@ x86_emit_expr:
     jmp .done
 
 .e_un_op:
-    mov rdi, [r12 + ASTNode.child1]
-    call x86_emit_expr
     mov rbx, [r12 + ASTNode.val]
     mov cl, [rbx]
     cmp cl, '-'
-    jne .chk_addr
+    jne .not_unary_minus
+
+    mov rdi, [r12 + ASTNode.child1]
+    cmp qword [rdi + ASTNode.type], AST_LITERAL
+    jne .normal_un_op
+
+    mov rbx, [rdi + ASTNode.val]
+    test rbx, rbx
+    jz .normal_un_op
+    mov al, [rbx]
+    cmp al, '0'
+    jl .normal_un_op
+    cmp al, '9'
+    jg .normal_un_op
+
+    mov rdi, rbx
+    mov rcx, [r12 + ASTNode.child1]
+    mov rcx, [rcx + ASTNode.val_len]
+    mov rsi, 1
+    call parse_int_literal
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xB8
+    call emit_byte
+    mov rsi, rax
+    call emit_qword
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -2029,7 +2041,19 @@ x86_emit_expr:
     call emit_byte
     jmp .done
 
-.chk_addr:
+.normal_un_op:
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xF7
+    call emit_byte
+    mov sil, 0xD8
+    call emit_byte
+    jmp .done
+
+.not_unary_minus:
     cmp cl, '&'
     jne .done
     mov rbx, [r12 + ASTNode.child1]
@@ -2784,6 +2808,8 @@ x86_encode_asm_line:
     je .mov_dest_eax
     cmp byte [r12], 'd'
     jne .chk_mov_al
+    cmp byte [r12 + 1], 's'
+    je .mov_dest_ds
     cmp byte [r12 + 1], 'x'
     je .mov_dest_dx
 .chk_mov_al:
@@ -2802,6 +2828,14 @@ x86_encode_asm_line:
     je .mov_dest_rdi
 
     jmp .asm_err
+
+.mov_dest_ds:
+    mov rdi, r13
+    mov sil, 0x8E
+    call emit_byte
+    mov sil, 0xD8
+    call emit_byte
+    jmp .done_line
 
 .mov_dest_dx:
     mov rdi, r13
@@ -2896,26 +2930,30 @@ x86_encode_asm_line:
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
-    mov sil, 0xC7
-    call emit_byte
-    mov sil, 0xC0
+    mov sil, 0xB8
     call emit_byte
 
     add r12, 4
     sub r14, 4
 .trim_imm1:
-    cmp byte [r12], ' '
-    jne .parse_imm1
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_imm1_c
+    cmp al, ','
+    je .inc_imm1_c
+    jmp .parse_imm1
+.inc_imm1_c:
     inc r12
     dec r14
     jmp .trim_imm1
 .parse_imm1:
     mov rdi, r12
     mov rcx, r14
-    call parse_dec_int
+    xor rsi, rsi
+    call parse_int_literal
     mov rdi, r13
-    mov esi, eax
-    call emit_dword
+    mov rsi, rax
+    call emit_qword
     jmp .done_line
 
 .mov_dest_rdi:
@@ -2999,8 +3037,45 @@ x86_encode_asm_line:
     test rax, rax
     jnz .chk_pop
 
+    add r12, 4
+    sub r14, 4
+.trim_push:
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_push_c
+    jmp .parsed_push
+.inc_push_c:
+    inc r12
+    dec r14
+    jmp .trim_push
+
+.parsed_push:
+    cmp byte [r12], 'r'
+    jne .push_default
+    mov al, [r12 + 1]
+    cmp al, 'a'
+    je .push_rax
+    cmp al, 'b'
+    je .push_rbx
+    cmp al, 'd'
+    je .push_rdi
+
+.push_default:
+.push_rbx:
     mov rdi, r13
     mov sil, 0x53
+    call emit_byte
+    jmp .done_line
+
+.push_rax:
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte
+    jmp .done_line
+
+.push_rdi:
+    mov rdi, r13
+    mov sil, 0x57
     call emit_byte
     jmp .done_line
 
@@ -3012,8 +3087,37 @@ x86_encode_asm_line:
     test rax, rax
     jnz .asm_err
 
+    add r12, 3
+    sub r14, 3
+.trim_pop:
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_pop_c
+    jmp .parsed_pop
+.inc_pop_c:
+    inc r12
+    dec r14
+    jmp .trim_pop
+
+.parsed_pop:
+    cmp byte [r12], 'r'
+    jne .pop_default
+    mov al, [r12 + 1]
+    cmp al, 'a'
+    je .pop_rax
+    cmp al, 'b'
+    je .pop_rbx
+
+.pop_default:
+.pop_rbx:
     mov rdi, r13
     mov sil, 0x5B
+    call emit_byte
+    jmp .done_line
+
+.pop_rax:
+    mov rdi, r13
+    mov sil, 0x58
     call emit_byte
     jmp .done_line
 

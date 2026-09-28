@@ -21,7 +21,7 @@ extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_
 extern sym_init, add_symbol, add_symbol_type, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol, find_symbol_entry
-extern print_err, sys_exit, str_ncmp, parse_dec_int
+extern print_err, sys_exit, str_ncmp, parse_dec_int, parse_int_literal
 
 struc ArmState
     .code_buf:          resq 1
@@ -927,13 +927,43 @@ arm_emit_expr:
     cmp al, '9'
     jg .e_lit_str_arm
 
-    call parse_dec_int
-    ; mov x0, #imm16
+    xor rsi, rsi
+    call parse_int_literal
+    mov rbx, rax
+
+    mov eax, ebx
     and eax, 0xFFFF
     shl eax, 5
-    mov r8d, 0xD2800000
-    or eax, r8d
+    or eax, 0xD2800000
     EMIT_ARM eax
+
+    mov rax, rbx
+    shr rax, 16
+    and eax, 0xFFFF
+    jz .chk_chunk2
+    shl eax, 5
+    or eax, 0xF2A00000
+    EMIT_ARM eax
+
+.chk_chunk2:
+    mov rax, rbx
+    shr rax, 32
+    and eax, 0xFFFF
+    jz .chk_chunk3
+    shl eax, 5
+    or eax, 0xF2C00000
+    EMIT_ARM eax
+
+.chk_chunk3:
+    mov rax, rbx
+    shr rax, 48
+    and eax, 0xFFFF
+    jz .chunk_done
+    shl eax, 5
+    or eax, 0xF2E00000
+    EMIT_ARM eax
+
+.chunk_done:
 
     ; mov x1, #1 (INT tag = 1) -> 0xD2800021
     EMIT_ARM 0xD2800021
@@ -1170,9 +1200,43 @@ arm_emit_expr:
     jmp .done
 
 .e_un_op:
+    mov rbx, [r12 + ASTNode.val]
+    mov cl, [rbx]
+    cmp cl, '-'
+    jne .normal_un_op_arm
+
+    mov rdi, [r12 + ASTNode.child1]
+    cmp qword [rdi + ASTNode.type], AST_LITERAL
+    jne .normal_un_op_arm
+
+    mov rbx, [rdi + ASTNode.val]
+    test rbx, rbx
+    jz .normal_un_op_arm
+    mov al, [rbx]
+    cmp al, '0'
+    jl .normal_un_op_arm
+    cmp al, '9'
+    jg .normal_un_op_arm
+
+    mov rdi, rbx
+    mov rcx, [r12 + ASTNode.child1]
+    mov rcx, [rcx + ASTNode.val_len]
+    mov rsi, 1
+    call parse_int_literal
+
+    and eax, 0xFFFF
+    shl eax, 5
+    mov r8d, 0xD2800000
+    or eax, r8d
+    EMIT_ARM eax
+    mov eax, 0xD2800021
+    EMIT_ARM eax
+    EMIT_ARM 0xCB0003E0
+    jmp .done
+
+.normal_un_op_arm:
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_expr
-    ; neg x0, x0 -> 0xCB0003E0
     EMIT_ARM 0xCB0003E0
     jmp .done
 

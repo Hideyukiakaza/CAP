@@ -9,6 +9,9 @@ err_indent: db "SyntaxError: Indentation must be a multiple of 4 spaces", 10, 0
 err_mismatch_indent: db "SyntaxError: Unindent does not match any outer indentation level", 10, 0
 err_unexpected_char: db "LexerError: Unexpected character", 10, 0
 err_unterm_string: db "LexerError: Unterminated string literal", 10, 0
+err_lexer_malformed_num_1: db "LexerError: malformed numeric literal '", 0
+err_lexer_malformed_num_2: db "' on line ", 0
+err_newline: db 10, 0
 
 kw_if:     db "if", 0
 kw_elif:   db "elif", 0
@@ -50,7 +53,7 @@ indent_sp:    resq 1
 section .text
 global tokenize_source, lexer_next_token, lexer_peek_token, lexer_rewind, dump_tokens_debug, lookup_keyword
 global save_lexer_state, restore_lexer_state
-extern malloc_bytes, print_err, print_str, print_char, print_num, sys_write, sys_exit, str_ncmp, str_cmp, str_len
+extern malloc_bytes, print_err, print_err_bytes, print_err_num, print_str, print_char, print_num, sys_write, sys_exit, str_ncmp, str_cmp, str_len
 
 save_lexer_state:
     mov rax, [lexer_tokens]
@@ -461,35 +464,216 @@ try_lex_asm_line:
     xor rax, rax
     ret
 
+is_dec_digit:
+    cmp al, '0'
+    jl .not_dec
+    cmp al, '9'
+    jg .not_dec
+    mov rax, 1
+    ret
+.not_dec:
+    xor rax, rax
+    ret
+
+is_hex_digit:
+    cmp al, '0'
+    jl .chk_hex_alpha
+    cmp al, '9'
+    jle .is_hex
+.chk_hex_alpha:
+    cmp al, 'a'
+    jl .chk_hex_upper
+    cmp al, 'f'
+    jle .is_hex
+.chk_hex_upper:
+    cmp al, 'A'
+    jl .not_hex
+    cmp al, 'F'
+    jle .is_hex
+.not_hex:
+    xor rax, rax
+    ret
+.is_hex:
+    mov rax, 1
+    ret
+
+is_bin_digit:
+    cmp al, '0'
+    je .is_bin
+    cmp al, '1'
+    je .is_bin
+    xor rax, rax
+    ret
+.is_bin:
+    mov rax, 1
+    ret
+
+is_ident_char_or_dot:
+    cmp al, '.'
+    je .is_id
+    cmp al, '_'
+    je .is_id
+    call is_alnum
+    ret
+.is_id:
+    mov rax, 1
+    ret
+
 lex_number_token:
     push rbx
     push r12
+    push r13
+    push r14
+    push r15
+
     mov rsi, [src_ptr]
+    mov al, [rsi]
+
+    cmp al, '0'
+    jne .parse_decimal
+
+    mov bl, [rsi + 1]
+    cmp bl, 'x'
+    je .parse_hex
+    cmp bl, 'X'
+    je .parse_hex
+    cmp bl, 'b'
+    je .parse_binary
+    cmp bl, 'B'
+    je .parse_binary
+    jmp .parse_decimal
+
+.parse_hex:
+    mov rcx, 2
+    mov al, [rsi + rcx]
+    call is_hex_digit
+    test rax, rax
+    jz .err_malformed
+
+.hex_loop:
+    mov al, [rsi + rcx]
+    call is_hex_digit
+    test rax, rax
+    jnz .next_hex_char
+
+    mov al, [rsi + rcx]
+    cmp al, '_'
+    jne .hex_done
+    mov al, [rsi + rcx - 1]
+    call is_hex_digit
+    test rax, rax
+    jz .err_malformed
+    mov al, [rsi + rcx + 1]
+    call is_hex_digit
+    test rax, rax
+    jz .err_malformed
+
+.next_hex_char:
+    inc rcx
+    jmp .hex_loop
+
+.hex_done:
+    mov al, [rsi + rcx]
+    call is_ident_char_or_dot
+    test rax, rax
+    jnz .err_malformed
+
+    mov rdi, TOKEN_INT
+    jmp .emit_num
+
+.parse_binary:
+    mov rcx, 2
+    mov al, [rsi + rcx]
+    call is_bin_digit
+    test rax, rax
+    jz .err_malformed
+
+.bin_loop:
+    mov al, [rsi + rcx]
+    call is_bin_digit
+    test rax, rax
+    jnz .next_bin_char
+
+    mov al, [rsi + rcx]
+    cmp al, '_'
+    jne .bin_done
+    mov al, [rsi + rcx - 1]
+    call is_bin_digit
+    test rax, rax
+    jz .err_malformed
+    mov al, [rsi + rcx + 1]
+    call is_bin_digit
+    test rax, rax
+    jz .err_malformed
+
+.next_bin_char:
+    inc rcx
+    jmp .bin_loop
+
+.bin_done:
+    mov al, [rsi + rcx]
+    call is_ident_char_or_dot
+    test rax, rax
+    jnz .err_malformed
+
+    mov rdi, TOKEN_INT
+    jmp .emit_num
+
+.parse_decimal:
     xor rcx, rcx
     xor r12, r12
 
-.num_loop:
+.dec_loop:
     mov al, [rsi + rcx]
-    cmp al, '0'
-    jl .check_dot
-    cmp al, '9'
-    jle .next_num_char
-.check_dot:
+    call is_dec_digit
+    test rax, rax
+    jnz .next_dec_char
+
+    mov al, [rsi + rcx]
+    cmp al, '_'
+    jne .check_dec_dot
+    test rcx, rcx
+    jz .err_malformed
+    mov al, [rsi + rcx - 1]
+    call is_dec_digit
+    test rax, rax
+    jz .err_malformed
+    mov al, [rsi + rcx + 1]
+    call is_dec_digit
+    test rax, rax
+    jz .err_malformed
+    jmp .next_dec_char
+
+.check_dec_dot:
     cmp al, '.'
-    jne .num_done
+    jne .dec_done
     test r12, r12
-    jnz .num_done
+    jnz .err_malformed
     mov bl, [rsi + rcx + 1]
     cmp bl, '0'
-    jl .num_done
+    jl .dec_done
     cmp bl, '9'
-    jg .num_done
-    mov r12, 1
-.next_num_char:
-    inc rcx
-    jmp .num_loop
+    jg .dec_done
 
-.num_done:
+    mov r12, 1
+    test rcx, rcx
+    jz .err_malformed
+    mov al, [rsi + rcx - 1]
+    cmp al, '_'
+    je .err_malformed
+
+.next_dec_char:
+    inc rcx
+    jmp .dec_loop
+
+.dec_done:
+    mov al, [rsi + rcx]
+    call is_alpha
+    test rax, rax
+    jnz .err_malformed
+    cmp al, '_'
+    je .err_malformed
+
     test r12, r12
     jnz .is_float
     mov rdi, TOKEN_INT
@@ -502,9 +686,46 @@ lex_number_token:
     mov rdx, rcx
     call emit_token
     add [src_ptr], rcx
+    pop r15
+    pop r14
+    pop r13
     pop r12
     pop rbx
     ret
+
+.err_malformed:
+    mov rsi, [src_ptr]
+    xor rcx, rcx
+.scan_bad_run:
+    mov al, [rsi + rcx]
+    test al, al
+    jz .print_bad_err
+    call is_ident_char_or_dot
+    test rax, rax
+    jnz .inc_bad_run
+    cmp al, '0'
+    jl .print_bad_err
+    cmp al, '9'
+    jle .inc_bad_run
+.inc_bad_run:
+    inc rcx
+    jmp .scan_bad_run
+
+.print_bad_err:
+    mov rsi, err_lexer_malformed_num_1
+    call print_err
+    mov rsi, [src_ptr]
+    mov rdx, rcx
+    call print_err_bytes
+    mov rsi, err_lexer_malformed_num_2
+    call print_err
+    mov rdi, [line_num]
+    call print_err_num
+    mov rsi, err_newline
+    call print_err
+
+    mov rdi, 1
+    call sys_exit
 
 lex_fstring:
     mov rsi, [src_ptr]
@@ -760,19 +981,17 @@ lex_operator_or_punct:
     ret
 
 is_alpha:
-    mov rsi, [src_ptr]
-    mov cl, [rsi]
-    cmp cl, 'a'
+    cmp al, 'a'
     jl .check_upper
-    cmp cl, 'z'
+    cmp al, 'z'
     jle .yes
 .check_upper:
-    cmp cl, 'A'
+    cmp al, 'A'
     jl .check_under
-    cmp cl, 'Z'
+    cmp al, 'Z'
     jle .yes
 .check_under:
-    cmp cl, '_'
+    cmp al, '_'
     je .yes
     xor rax, rax
     ret

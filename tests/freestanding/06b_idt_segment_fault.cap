@@ -1,0 +1,6 @@
+/*/ Expected: EXCEPTION: vector=13 err=0x0000000000000020 /*
+fn main():
+    asm:
+        mov eax, 0x20
+        mov ds, ax
+    return 0

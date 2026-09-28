@@ -1,0 +1,40 @@
+EXIT: 0
+STDOUT:
+Tok type: 4 val: a
+Tok type: 9 val: =
+Tok type: 5 val: 0xFF
+Tok type: 1 val: 
+Tok type: 4 val: b
+Tok type: 9 val: =
+Tok type: 5 val: 0x3F8
+Tok type: 1 val: 
+Tok type: 4 val: c
+Tok type: 9 val: =
+Tok type: 5 val: 0b1010
+Tok type: 1 val: 
+Tok type: 4 val: d
+Tok type: 9 val: =
+Tok type: 5 val: 0x7FFFFFFFFFFFFFFF
+Tok type: 1 val: 
+Tok type: 4 val: e
+Tok type: 9 val: =
+Tok type: 5 val: 0xFFFFFFFFFFFFFFFF
+Tok type: 1 val: 
+Tok type: 4 val: f
+Tok type: 9 val: =
+Tok type: 5 val: 1_000_000
+Tok type: 1 val: 
+Tok type: 4 val: g
+Tok type: 9 val: =
+Tok type: 5 val: 0xFFFF_8000
+Tok type: 1 val: 
+Tok type: 4 val: h
+Tok type: 9 val: =
+Tok type: 5 val: 0b1010_0101
+Tok type: 1 val: 
+Tok type: 4 val: i
+Tok type: 9 val: =
+Tok type: 6 val: 3.14_159
+Tok type: 1 val: 
+Tok type: 0 val: 
+STDERR:

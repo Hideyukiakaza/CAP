@@ -3,7 +3,7 @@ default rel
 
 section .text
 global sys_exit, sys_write, sys_read, sys_open, sys_close, sys_mmap
-global malloc_init, malloc_bytes, str_len, str_cmp, str_ncmp, print_str, print_err, print_char, print_num, parse_dec_int
+global malloc_init, malloc_bytes, str_len, str_cmp, str_ncmp, print_str, print_err, print_err_bytes, print_err_num, print_char, print_num, parse_dec_int, parse_int_literal
 
 %define SYS_READ 0
 %define SYS_WRITE 1
@@ -53,6 +53,59 @@ print_str:
     call sys_write
     pop rdx
     pop rdi
+    ret
+
+print_err_bytes:
+    push rdi
+    push rsi
+    push rdx
+    mov rdi, STDERR
+    call sys_write
+    pop rdx
+    pop rsi
+    pop rdi
+    ret
+
+print_err_num:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    sub rsp, 32
+
+    mov rax, rdi
+    lea rsi, [rsp + 31]
+    mov byte [rsi], 0
+    mov rbx, 10
+
+    test rax, rax
+    jnz .pen_loop
+    dec rsi
+    mov byte [rsi], '0'
+    jmp .pen_print
+
+.pen_loop:
+    test rax, rax
+    jz .pen_print
+    xor rdx, rdx
+    div rbx
+    add dl, '0'
+    dec rsi
+    mov [rsi], dl
+    jmp .pen_loop
+
+.pen_print:
+    call print_err
+
+    add rsp, 32
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
     ret
 
 print_err:
@@ -127,81 +180,213 @@ print_num:
     pop rax
     ret
 
+err_num_out_of_range: db "Error: integer literal out of range", 10, 0
+
 parse_dec_int:
-    ; rdi = str_ptr, rcx = len -> returns uint64 in rax
+    xor rsi, rsi
+    jmp parse_int_literal
+
+parse_int_literal:
+    ; rdi = str_ptr, rcx = len, rsi = allow_min_mag (1 if under unary minus, 0 otherwise)
+    ; Returns uint64/int64 in rax. If out of range, prints error and exits with 1.
     push rbx
-    push rsi
-    xor rax, rax
-    xor rbx, rbx
+    push r12
+    push r13
+    push r14
+    push r15
 
-    test rcx, rcx
-    jz .p_done
+    mov r12, rdi             ; str_ptr
+    mov r13, rcx             ; len
+    mov r14, rsi             ; allow_min_mag
 
-    cmp byte [rdi], '0'
-    jne .p_loop
-    cmp rcx, 2
-    jl .p_loop
-    mov bl, [rdi + 1]
+    test r13, r13
+    jz .range_err
+
+    mov al, [r12]
+    cmp al, '0'
+    jne .parse_dec
+
+    cmp r13, 2
+    jl .parse_dec
+
+    mov bl, [r12 + 1]
     cmp bl, 'x'
-    je .is_hex
+    je .parse_hex
     cmp bl, 'X'
-    jne .p_loop
+    je .parse_hex
+    cmp bl, 'b'
+    je .parse_bin
+    cmp bl, 'B'
+    je .parse_bin
+    jmp .parse_dec
 
-.is_hex:
-    add rdi, 2
-    sub rcx, 2
+.parse_hex:
+    add r12, 2
+    sub r13, 2
+    xor rax, rax
+    xor r15, r15
 
 .hex_loop:
-    test rcx, rcx
-    jz .p_done
-    mov bl, [rdi]
-    cmp bl, '0'
-    jl .p_done
-    cmp bl, '9'
-    jle .hex_digit
-    cmp bl, 'A'
-    jl .chk_hex_lower
-    cmp bl, 'F'
-    jle .hex_upper
-.chk_hex_lower:
-    cmp bl, 'a'
-    jl .p_done
-    cmp bl, 'f'
-    jg .p_done
-    sub bl, 'a'
-    add bl, 10
-    jmp .hex_accum
-.hex_upper:
-    sub bl, 'A'
-    add bl, 10
-    jmp .hex_accum
-.hex_digit:
-    sub bl, '0'
-.hex_accum:
+    test r13, r13
+    jz .hex_done
+    mov bl, [r12]
+    inc r12
+    dec r13
+
+    cmp bl, '_'
+    je .hex_loop
+
+    call hex_char_to_val
+    cmp rbx, 0
+    jl .range_err
+
+    inc r15
+    cmp r15, 16
+    jg .range_err
+
     shl rax, 4
-    add rax, rbx
-    inc rdi
-    dec rcx
+    or rax, rbx
     jmp .hex_loop
 
-.p_loop:
-    test rcx, rcx
-    jz .p_done
-    mov bl, [rdi]
-    cmp bl, '0'
-    jl .p_done
-    cmp bl, '9'
-    jg .p_done
-    sub bl, '0'
-    imul rax, 10
-    add rax, rbx
-    inc rdi
-    dec rcx
-    jmp .p_loop
+.hex_done:
+    test r15, r15
+    jz .range_err
+    jmp .success
 
-.p_done:
-    pop rsi
+.parse_bin:
+    add r12, 2
+    sub r13, 2
+    xor rax, rax
+    xor r15, r15
+
+.bin_loop:
+    test r13, r13
+    jz .bin_done
+    mov bl, [r12]
+    inc r12
+    dec r13
+
+    cmp bl, '_'
+    je .bin_loop
+
+    cmp bl, '0'
+    je .bin_zero
+    cmp bl, '1'
+    je .bin_one
+    jmp .range_err
+
+.bin_zero:
+    xor rbx, rbx
+    jmp .bin_accum
+.bin_one:
+    mov rbx, 1
+.bin_accum:
+    inc r15
+    cmp r15, 64
+    jg .range_err
+
+    shl rax, 1
+    or rax, rbx
+    jmp .bin_loop
+
+.bin_done:
+    test r15, r15
+    jz .range_err
+    jmp .success
+
+.parse_dec:
+    xor rax, rax
+    xor r15, r15
+
+.dec_loop:
+    test r13, r13
+    jz .dec_done
+    mov cl, [r12]
+    inc r12
+    dec r13
+
+    cmp cl, '_'
+    je .dec_loop
+
+    cmp cl, '0'
+    jl .range_err
+    cmp cl, '9'
+    jg .range_err
+
+    sub cl, '0'
+    movzx rcx, cl
+
+    push rdx
+    mov rbx, 10
+    mul rbx
+    test rdx, rdx
+    pop rdx
+    jnz .range_err
+
+    add rax, rcx
+    jc .range_err
+
+    inc r15
+    jmp .dec_loop
+
+.dec_done:
+    test r15, r15
+    jz .range_err
+
+    mov rbx, 0x8000000000000000
+    cmp rax, rbx
+    ja .range_err
+    je .check_min_mag
+    jmp .success
+
+.check_min_mag:
+    cmp r14, 1
+    je .success
+
+.range_err:
+    mov rsi, err_num_out_of_range
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.success:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
     pop rbx
+    ret
+
+hex_char_to_val:
+    cmp bl, '0'
+    jl .not_h
+    cmp bl, '9'
+    jle .h_digit
+    cmp bl, 'a'
+    jl .chk_h_upper
+    cmp bl, 'f'
+    jle .h_lower
+.chk_h_upper:
+    cmp bl, 'A'
+    jl .not_h
+    cmp bl, 'F'
+    jle .h_upper
+.not_h:
+    mov rbx, -1
+    ret
+.h_digit:
+    sub bl, '0'
+    movzx rbx, bl
+    ret
+.h_lower:
+    sub bl, 'a'
+    add bl, 10
+    movzx rbx, bl
+    ret
+.h_upper:
+    sub bl, 'A'
+    add bl, 10
+    movzx rbx, bl
     ret
 
 str_len:

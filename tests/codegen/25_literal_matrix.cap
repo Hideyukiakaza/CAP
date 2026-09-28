@@ -1,0 +1,23 @@
+struct Point:
+    x: int
+    y: int
+
+fn main():
+    print(0xFF)
+    print(0x3F8)
+    print(0b1010)
+    print(0x7FFFFFFFFFFFFFFF)
+    print(0xFFFFFFFFFFFFFFFF)
+
+    a = 0xFF
+    print(a)
+
+    p = Point{x: 0x3F8, y: 0b1010}
+    print(p.x)
+    print(p.y)
+
+    for i in range(0b1010, 0b1100):
+        print(i)
+
+    print(f"Hex: {0xFF}, Bin: {0b1010}")
+    return 0
