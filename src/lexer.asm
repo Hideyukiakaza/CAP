@@ -704,10 +704,11 @@ lex_number_token:
     jmp .scan_bad_run
 
 .print_bad_err:
+    push rcx
     mov rsi, err_lexer_malformed_num_1
     call print_err
+    pop rdx
     mov rsi, [src_ptr]
-    mov rdx, rcx
     call print_err_bytes
     mov rsi, err_lexer_malformed_num_2
     call print_err

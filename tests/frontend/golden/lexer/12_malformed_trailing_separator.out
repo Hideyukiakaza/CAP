@@ -1,0 +1,5 @@
+EXIT: 1
+STDOUT:
+
+STDERR:
+LexerError: malformed numeric literal '1_' on line 1
