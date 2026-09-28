@@ -5,10 +5,7 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop, out, in, div, xor", 10, 0
-err_freestanding_print: db "'print' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
-err_freestanding_input: db "'input' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
-err_freestanding_alloc: db "'alloc' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
+err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
 s_print:             db "print", 0
 s_input:             db "input", 0
 s_fstring:           db "fstring", 0
@@ -20,14 +17,6 @@ s_add:               db "add", 0
 s_sub:               db "sub", 0
 s_push:              db "push", 0
 s_pop:               db "pop", 0
-s_out:               db "out", 0
-s_in:                db "in", 0
-s_div:               db "div", 0
-s_xor:               db "xor", 0
-s_ecx:               db "ecx", 0
-s_dx:                db "dx", 0
-s_al:                db "al", 0
-s_eax:               db "eax", 0
 
 section .text
 global x86_emit_program
@@ -36,7 +25,7 @@ extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
-extern print_err, sys_exit, str_ncmp, parse_dec_int, parse_int_literal, target_arch
+extern print_err, print_err_bytes, sys_exit, str_ncmp, parse_dec_int, parse_int_literal
 
 struc X86State
     .code_buf:     resq 1
@@ -53,7 +42,6 @@ struc X86State
     .loop_start:   resq 1
     .loop_end:     resq 1
     .ast_root:     resq 1
-    .is_curr_fn_main: resb 1
 endstruc
 
 section .bss
@@ -78,10 +66,6 @@ x86_emit_program:
     mov [xstate + X86State.code_buf], r13
     mov [xstate + X86State.ast_root], r12
     call fn_sym_init
-
-    ; Check if freestanding mode
-    cmp qword [target_arch], TARGET_FREESTANDING
-    je .emit_freestanding_start
 
     ; 1. Emit _start sequence at offset 0
     ; call main (E8 <rel32>) - place-holder rel32 = 0
@@ -174,30 +158,6 @@ x86_emit_program:
     mov rdx, rax             ; rel32
     call patch_dword
 
-    jmp .emit_fns
-
-.emit_freestanding_start:
-    ; Freestanding mode _start:
-    ; call main (E8 <rel32>) - placeholder rel32 at offset 1
-    mov rdi, r13
-    mov sil, 0xE8
-    call emit_byte
-    mov rdi, r13
-    xor rsi, rsi
-    call emit_dword          ; offset 1 is rel32 for main
-
-    ; Halt loop: cli; hlt; jmp -3 (FA F4 EB FD)
-    mov rdi, r13
-    mov sil, 0xFA            ; cli
-    call emit_byte
-    mov sil, 0xF4            ; hlt
-    call emit_byte
-    mov sil, 0xEB            ; jmp
-    call emit_byte
-    mov sil, 0xFD            ; -3 bytes
-    call emit_byte
-
-.emit_fns:
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
 .fn_loop:
@@ -262,11 +222,7 @@ x86_emit_fn:
     jnz .not_main
     mov rax, [r13 + 16]      ; len
     mov [xstate + X86State.fn_main_off], rax
-    mov byte [xstate + X86State.is_curr_fn_main], 1
-    jmp .is_main_done
 .not_main:
-    mov byte [xstate + X86State.is_curr_fn_main], 0
-.is_main_done:
 
     ; Prologue:
     ; push rbp (55)
@@ -433,24 +389,6 @@ x86_emit_fn:
     mov rdi, [r12 + ASTNode.child2]
     call x86_emit_stmt
 
-    cmp qword [target_arch], TARGET_FREESTANDING
-    jne .body_std_epilogue
-    cmp byte [xstate + X86State.is_curr_fn_main], 1
-    jne .body_std_epilogue
-
-    ; Freestanding main fall-through epilogue: cli; hlt; jmp -3 (FA F4 EB FD)
-    mov rdi, r13
-    mov sil, 0xFA            ; cli
-    call emit_byte
-    mov sil, 0xF4            ; hlt
-    call emit_byte
-    mov sil, 0xEB            ; jmp
-    call emit_byte
-    mov sil, 0xFD            ; -3 bytes
-    call emit_byte
-    jmp .fn_done
-
-.body_std_epilogue:
     ; Epilogue:
     ; xor rax, rax (for default return 0 if falls through)
     mov rdi, r13
@@ -475,7 +413,6 @@ x86_emit_fn:
     mov sil, 0xC3
     call emit_byte
 
-.fn_done:
     pop r15
     pop r14
     pop r13
@@ -815,24 +752,6 @@ x86_emit_stmt:
     call emit_byte           ; pop rax (restore return val)
 
 .ret_epilogue:
-    cmp qword [target_arch], TARGET_FREESTANDING
-    jne .ret_std_epilogue
-    cmp byte [xstate + X86State.is_curr_fn_main], 1
-    jne .ret_std_epilogue
-
-    ; Freestanding main return epilogue: cli; hlt; jmp -3 (FA F4 EB FD)
-    mov rdi, r13
-    mov sil, 0xFA            ; cli
-    call emit_byte
-    mov sil, 0xF4            ; hlt
-    call emit_byte
-    mov sil, 0xEB            ; jmp
-    call emit_byte
-    mov sil, 0xFD            ; -3 bytes
-    call emit_byte
-    jmp .next
-
-.ret_std_epilogue:
     ; mov rsp, rbp (48 89 EC)
     mov rdi, r13
     mov sil, 0x48
@@ -1386,8 +1305,6 @@ x86_emit_expr:
     jmp .done
 
 .e_alloc:
-    cmp qword [target_arch], TARGET_FREESTANDING
-    je err_free_alloc
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr
     mov rdi, r13
@@ -1993,20 +1910,20 @@ x86_emit_expr:
     mov rbx, [r12 + ASTNode.val]
     mov cl, [rbx]
     cmp cl, '-'
-    jne .not_unary_minus
+    jne .normal_un_op_x86
 
     mov rdi, [r12 + ASTNode.child1]
     cmp qword [rdi + ASTNode.type], AST_LITERAL
-    jne .normal_un_op
+    jne .normal_un_op_x86
 
     mov rbx, [rdi + ASTNode.val]
     test rbx, rbx
-    jz .normal_un_op
+    jz .normal_un_op_x86
     mov al, [rbx]
     cmp al, '0'
-    jl .normal_un_op
+    jl .normal_un_op_x86
     cmp al, '9'
-    jg .normal_un_op
+    jg .normal_un_op_x86
 
     mov rdi, rbx
     mov rcx, [r12 + ASTNode.child1]
@@ -2014,6 +1931,7 @@ x86_emit_expr:
     mov rsi, 1
     call parse_int_literal
 
+    ; mov rax, imm64
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -2022,7 +1940,15 @@ x86_emit_expr:
     mov rsi, rax
     call emit_qword
 
-    mov rdi, r13
+    ; neg rax
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xF7
+    call emit_byte
+    mov sil, 0xD8
+    call emit_byte
+
+    ; mov rdx, 1 (tag = 1 INT)
     mov sil, 0x48
     call emit_byte
     mov sil, 0xC7
@@ -2031,19 +1957,15 @@ x86_emit_expr:
     call emit_byte
     mov esi, 1
     call emit_dword
-
-    mov rdi, r13
-    mov sil, 0x48
-    call emit_byte
-    mov sil, 0xF7
-    call emit_byte
-    mov sil, 0xD8
-    call emit_byte
     jmp .done
 
-.normal_un_op:
+.normal_un_op_x86:
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr
+    mov rbx, [r12 + ASTNode.val]
+    mov cl, [rbx]
+    cmp cl, '-'
+    jne .chk_addr
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -2053,7 +1975,7 @@ x86_emit_expr:
     call emit_byte
     jmp .done
 
-.not_unary_minus:
+.chk_addr:
     cmp cl, '&'
     jne .done
     mov rbx, [r12 + ASTNode.child1]
@@ -2266,8 +2188,6 @@ x86_emit_expr:
     jmp .done
 
 .call_input:
-    cmp qword [target_arch], TARGET_FREESTANDING
-    je err_free_input
     mov rbx, [r12 + ASTNode.child1]
     test rbx, rbx
     jz .input_no_prompt
@@ -2323,8 +2243,6 @@ x86_emit_expr:
     jmp .done
 
 .call_print:
-    cmp qword [target_arch], TARGET_FREESTANDING
-    je err_free_print
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr        ; rax = val, rdx = tag at runtime
 
@@ -2576,7 +2494,614 @@ x86_emit_asm_lines:
     ret
 
 
+%define OP_NONE    0
+%define OP_REG     1
+%define OP_MEM     2
+%define OP_IMM     3
+
+%define REG_GPR64  1
+%define REG_GPR32  2
+%define REG_GPR16  3
+%define REG_GPR8   4
+%define REG_SREG   5
+%define REG_CR     6
+
+%define M_NONE     0x0001
+%define M_REG64    0x0002
+%define M_REG32    0x0004
+%define M_REG16    0x0008
+%define M_REG8     0x0010
+%define M_SREG     0x0020
+%define M_CR       0x0040
+%define M_MEM      0x0080
+%define M_IMM      0x0100
+%define M_DX       0x0200
+%define M_AX       0x0400
+%define M_EAX      0x0800
+%define M_AL       0x1000
+
+%define M_RM64     (M_REG64 | M_MEM)
+%define M_RM32     (M_REG32 | M_MEM)
+%define M_RM16     (M_REG16 | M_MEM)
+%define M_RM8      (M_REG8  | M_MEM)
+
+%define REG_FROM_OP1 10
+%define REG_FROM_OP2 11
+%define NO_MODRM     0xFF
+
+%define F_REX_W          0x01
+%define F_IMM8           0x02
+%define F_IMM16          0x04
+%define F_IMM32          0x08
+%define F_IMM64          0x10
+%define F_OPCODE_REG_ADD 0x20
+%define F_SREG_DEST      0x40
+
+struc AsmOp
+    .type:     resq 1
+    .reg_kind: resq 1
+    .reg_code: resq 1
+    .mem_base: resq 1
+    .mem_idx:  resq 1
+    .mem_scale:resq 1
+    .mem_disp: resq 1
+    .imm_val:  resq 1
+endstruc
+
+struc AsmTableEntry
+    .mne_ptr:   resq 1
+    .mne_len:   resq 1
+    .op1_mask:  resq 1
+    .op2_mask:  resq 1
+    .pfx1:      resq 1
+    .pfx2:      resq 1
+    .opcode:    resq 1
+    .modrm_reg: resq 1
+    .flags:     resq 1
+endstruc
+
+section .data
+err_asm_unknown_mne_1: db "Error: unknown asm instruction '", 0
+err_asm_unknown_mne_2: db "'", 10, 0
+err_asm_invalid_ops_1: db "Error: invalid operands for '", 0
+err_asm_invalid_ops_2: db "'", 10, 0
+
+s_reg_rax: db "rax", 0
+s_reg_rcx: db "rcx", 0
+s_reg_rdx: db "rdx", 0
+s_reg_rbx: db "rbx", 0
+s_reg_rsp: db "rsp", 0
+s_reg_rbp: db "rbp", 0
+s_reg_rsi: db "rsi", 0
+s_reg_rdi: db "rdi", 0
+s_reg_r8:  db "r8", 0
+s_reg_r9:  db "r9", 0
+s_reg_r10: db "r10", 0
+s_reg_r11: db "r11", 0
+s_reg_r12: db "r12", 0
+s_reg_r13: db "r13", 0
+s_reg_r14: db "r14", 0
+s_reg_r15: db "r15", 0
+
+s_reg_eax: db "eax", 0
+s_reg_ecx: db "ecx", 0
+s_reg_edx: db "edx", 0
+s_reg_ebx: db "ebx", 0
+s_reg_esp: db "esp", 0
+s_reg_ebp: db "ebp", 0
+s_reg_esi: db "esi", 0
+s_reg_edi: db "edi", 0
+s_reg_r8d: db "r8d", 0
+s_reg_r9d: db "r9d", 0
+s_reg_r10d:db "r10d", 0
+s_reg_r11d:db "r11d", 0
+s_reg_r12d:db "r12d", 0
+s_reg_r13d:db "r13d", 0
+s_reg_r14d:db "r14d", 0
+s_reg_r15d:db "r15d", 0
+
+s_reg_ax:  db "ax", 0
+s_reg_cx:  db "cx", 0
+s_reg_dx:  db "dx", 0
+s_reg_bx:  db "bx", 0
+s_reg_sp:  db "sp", 0
+s_reg_bp:  db "bp", 0
+s_reg_si:  db "si", 0
+s_reg_di:  db "di", 0
+s_reg_r8w: db "r8w", 0
+s_reg_r9w: db "r9w", 0
+s_reg_r10w:db "r10w", 0
+s_reg_r11w:db "r11w", 0
+s_reg_r12w:db "r12w", 0
+s_reg_r13w:db "r13w", 0
+s_reg_r14w:db "r14w", 0
+s_reg_r15w:db "r15w", 0
+
+s_reg_al:   db "al", 0
+s_reg_cl:   db "cl", 0
+s_reg_dl:   db "dl", 0
+s_reg_bl:   db "bl", 0
+s_reg_spl:  db "spl", 0
+s_reg_bpl:  db "bpl", 0
+s_reg_sil:  db "sil", 0
+s_reg_dil:  db "dil", 0
+s_reg_r8b:  db "r8b", 0
+s_reg_r9b:  db "r9b", 0
+s_reg_r10b: db "r10b", 0
+s_reg_r11b: db "r11b", 0
+s_reg_r12b: db "r12b", 0
+s_reg_r13b: db "r13b", 0
+s_reg_r14b: db "r14b", 0
+s_reg_r15b: db "r15b", 0
+
+s_reg_es:  db "es", 0
+s_reg_cs:  db "cs", 0
+s_reg_ss:  db "ss", 0
+s_reg_ds:  db "ds", 0
+s_reg_fs:  db "fs", 0
+s_reg_gs:  db "gs", 0
+
+s_reg_cr0: db "cr0", 0
+s_reg_cr2: db "cr2", 0
+s_reg_cr3: db "cr3", 0
+s_reg_cr4: db "cr4", 0
+
+s_mne_mov:    db "mov", 0
+s_mne_add:    db "add", 0
+s_mne_sub:    db "sub", 0
+s_mne_xor:    db "xor", 0
+s_mne_and:    db "and", 0
+s_mne_or:     db "or", 0
+s_mne_div:    db "div", 0
+s_mne_idiv:   db "idiv", 0
+s_mne_push:   db "push", 0
+s_mne_pop:    db "pop", 0
+s_mne_in:     db "in", 0
+s_mne_out:    db "out", 0
+s_mne_lgdt:   db "lgdt", 0
+s_mne_lidt:   db "lidt", 0
+s_mne_invlpg: db "invlpg", 0
+s_mne_rdmsr:  db "rdmsr", 0
+s_mne_wrmsr:  db "wrmsr", 0
+s_mne_cpuid:  db "cpuid", 0
+s_mne_iretq:  db "iretq", 0
+s_mne_int:    db "int", 0
+s_mne_cli:    db "cli", 0
+s_mne_sti:    db "sti", 0
+s_mne_hlt:    db "hlt", 0
+s_mne_nop:    db "nop", 0
+s_mne_ret:    db "ret", 0
+s_mne_syscall:db "syscall", 0
+
+align 8
+reg_table:
+    dq s_reg_rax, 3, REG_GPR64, 0
+    dq s_reg_rcx, 3, REG_GPR64, 1
+    dq s_reg_rdx, 3, REG_GPR64, 2
+    dq s_reg_rbx, 3, REG_GPR64, 3
+    dq s_reg_rsp, 3, REG_GPR64, 4
+    dq s_reg_rbp, 3, REG_GPR64, 5
+    dq s_reg_rsi, 3, REG_GPR64, 6
+    dq s_reg_rdi, 3, REG_GPR64, 7
+    dq s_reg_r8,  2, REG_GPR64, 8
+    dq s_reg_r9,  2, REG_GPR64, 9
+    dq s_reg_r10, 3, REG_GPR64, 10
+    dq s_reg_r11, 3, REG_GPR64, 11
+    dq s_reg_r12, 3, REG_GPR64, 12
+    dq s_reg_r13, 3, REG_GPR64, 13
+    dq s_reg_r14, 3, REG_GPR64, 14
+    dq s_reg_r15, 3, REG_GPR64, 15
+
+    dq s_reg_eax, 3, REG_GPR32, 0
+    dq s_reg_ecx, 3, REG_GPR32, 1
+    dq s_reg_edx, 3, REG_GPR32, 2
+    dq s_reg_ebx, 3, REG_GPR32, 3
+    dq s_reg_esp, 3, REG_GPR32, 4
+    dq s_reg_ebp, 3, REG_GPR32, 5
+    dq s_reg_esi, 3, REG_GPR32, 6
+    dq s_reg_edi, 3, REG_GPR32, 7
+    dq s_reg_r8d, 3, REG_GPR32, 8
+    dq s_reg_r9d, 3, REG_GPR32, 9
+    dq s_reg_r10d,4, REG_GPR32, 10
+    dq s_reg_r11d,4, REG_GPR32, 11
+    dq s_reg_r12d,4, REG_GPR32, 12
+    dq s_reg_r13d,4, REG_GPR32, 13
+    dq s_reg_r14d,4, REG_GPR32, 14
+    dq s_reg_r15d,4, REG_GPR32, 15
+
+    dq s_reg_ax,  2, REG_GPR16, 0
+    dq s_reg_cx,  2, REG_GPR16, 1
+    dq s_reg_dx,  2, REG_GPR16, 2
+    dq s_reg_bx,  2, REG_GPR16, 3
+    dq s_reg_sp,  2, REG_GPR16, 4
+    dq s_reg_bp,  2, REG_GPR16, 5
+    dq s_reg_si,  2, REG_GPR16, 6
+    dq s_reg_di,  2, REG_GPR16, 7
+    dq s_reg_r8w, 3, REG_GPR16, 8
+    dq s_reg_r9w, 3, REG_GPR16, 9
+    dq s_reg_r10w,4, REG_GPR16, 10
+    dq s_reg_r11w,4, REG_GPR16, 11
+    dq s_reg_r12w,4, REG_GPR16, 12
+    dq s_reg_r13w,4, REG_GPR16, 13
+    dq s_reg_r14w,4, REG_GPR16, 14
+    dq s_reg_r15w,4, REG_GPR16, 15
+
+    dq s_reg_al,   2, REG_GPR8, 0
+    dq s_reg_cl,   2, REG_GPR8, 1
+    dq s_reg_dl,   2, REG_GPR8, 2
+    dq s_reg_bl,   2, REG_GPR8, 3
+    dq s_reg_spl,  3, REG_GPR8, 4
+    dq s_reg_bpl,  3, REG_GPR8, 5
+    dq s_reg_sil,  3, REG_GPR8, 6
+    dq s_reg_dil,  3, REG_GPR8, 7
+    dq s_reg_r8b,  3, REG_GPR8, 8
+    dq s_reg_r9b,  3, REG_GPR8, 9
+    dq s_reg_r10b, 4, REG_GPR8, 10
+    dq s_reg_r11b, 4, REG_GPR8, 11
+    dq s_reg_r12b, 4, REG_GPR8, 12
+    dq s_reg_r13b, 4, REG_GPR8, 13
+    dq s_reg_r14b, 4, REG_GPR8, 14
+    dq s_reg_r15b, 4, REG_GPR8, 15
+
+    dq s_reg_es,  2, REG_SREG, 0
+    dq s_reg_cs,  2, REG_SREG, 1
+    dq s_reg_ss,  2, REG_SREG, 2
+    dq s_reg_ds,  2, REG_SREG, 3
+    dq s_reg_fs,  2, REG_SREG, 4
+    dq s_reg_gs,  2, REG_SREG, 5
+
+    dq s_reg_cr0, 3, REG_CR, 0
+    dq s_reg_cr2, 3, REG_CR, 2
+    dq s_reg_cr3, 3, REG_CR, 3
+    dq s_reg_cr4, 3, REG_CR, 4
+    dq 0, 0, 0, 0
+
+align 8
+asm_table:
+    ; mov
+    dq s_mne_mov, 3, M_REG64, M_IMM,    0x00, 0x00, 0xB8, NO_MODRM,     F_REX_W | F_IMM64 | F_OPCODE_REG_ADD
+    dq s_mne_mov, 3, M_REG32, M_IMM,    0x00, 0x00, 0xB8, NO_MODRM,     F_IMM32 | F_OPCODE_REG_ADD
+    dq s_mne_mov, 3, M_REG16, M_IMM,    0x66, 0x00, 0xB8, NO_MODRM,     F_IMM16 | F_OPCODE_REG_ADD
+    dq s_mne_mov, 3, M_REG8,  M_IMM,    0x00, 0x00, 0xB0, NO_MODRM,     F_IMM8  | F_OPCODE_REG_ADD
+    dq s_mne_mov, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x89, REG_FROM_OP2,  F_REX_W
+    dq s_mne_mov, 3, M_REG64, M_RM64,   0x00, 0x00, 0x8B, REG_FROM_OP1,  F_REX_W
+    dq s_mne_mov, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x89, REG_FROM_OP2,  0
+    dq s_mne_mov, 3, M_REG32, M_RM32,   0x00, 0x00, 0x8B, REG_FROM_OP1,  0
+    dq s_mne_mov, 3, M_RM16,  M_REG16,  0x66, 0x00, 0x89, REG_FROM_OP2,  0
+    dq s_mne_mov, 3, M_REG16, M_RM16,   0x66, 0x00, 0x8B, REG_FROM_OP1,  0
+    dq s_mne_mov, 3, M_RM8,   M_REG8,   0x00, 0x00, 0x88, REG_FROM_OP2,  0
+    dq s_mne_mov, 3, M_REG8,  M_RM8,    0x00, 0x00, 0x8A, REG_FROM_OP1,  0
+    dq s_mne_mov, 3, M_SREG,  M_RM16,   0x00, 0x00, 0x8E, REG_FROM_OP1,  F_SREG_DEST
+    dq s_mne_mov, 3, M_RM16,  M_SREG,   0x00, 0x00, 0x8C, REG_FROM_OP2,  0
+    dq s_mne_mov, 3, M_CR,    M_REG64,  0x0F, 0x00, 0x22, REG_FROM_OP1,  0
+    dq s_mne_mov, 3, M_REG64, M_CR,     0x0F, 0x00, 0x20, REG_FROM_OP2,  0
+
+    ; add
+    dq s_mne_add, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x01, REG_FROM_OP2,  F_REX_W
+    dq s_mne_add, 3, M_REG64, M_RM64,   0x00, 0x00, 0x03, REG_FROM_OP1,  F_REX_W
+    dq s_mne_add, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x01, REG_FROM_OP2,  0
+    dq s_mne_add, 3, M_REG32, M_RM32,   0x00, 0x00, 0x03, REG_FROM_OP1,  0
+
+    ; sub
+    dq s_mne_sub, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x29, REG_FROM_OP2,  F_REX_W
+    dq s_mne_sub, 3, M_REG64, M_RM64,   0x00, 0x00, 0x2B, REG_FROM_OP1,  F_REX_W
+    dq s_mne_sub, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x29, REG_FROM_OP2,  0
+    dq s_mne_sub, 3, M_REG32, M_RM32,   0x00, 0x00, 0x2B, REG_FROM_OP1,  0
+
+    ; xor
+    dq s_mne_xor, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x31, REG_FROM_OP2,  F_REX_W
+    dq s_mne_xor, 3, M_REG64, M_RM64,   0x00, 0x00, 0x33, REG_FROM_OP1,  F_REX_W
+    dq s_mne_xor, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x31, REG_FROM_OP2,  0
+    dq s_mne_xor, 3, M_REG32, M_RM32,   0x00, 0x00, 0x33, REG_FROM_OP1,  0
+
+    ; and
+    dq s_mne_and, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x21, REG_FROM_OP2,  F_REX_W
+    dq s_mne_and, 3, M_REG64, M_RM64,   0x00, 0x00, 0x23, REG_FROM_OP1,  F_REX_W
+    dq s_mne_and, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x21, REG_FROM_OP2,  0
+    dq s_mne_and, 3, M_REG32, M_RM32,   0x00, 0x00, 0x23, REG_FROM_OP1,  0
+
+    ; or
+    dq s_mne_or, 2,  M_RM64,  M_REG64,  0x00, 0x00, 0x09, REG_FROM_OP2,  F_REX_W
+    dq s_mne_or, 2,  M_REG64, M_RM64,   0x00, 0x00, 0x0B, REG_FROM_OP1,  F_REX_W
+    dq s_mne_or, 2,  M_RM32,  M_REG32,  0x00, 0x00, 0x09, REG_FROM_OP2,  0
+    dq s_mne_or, 2,  M_REG32, M_RM32,   0x00, 0x00, 0x0B, REG_FROM_OP1,  0
+
+    ; div / idiv
+    dq s_mne_div, 3,  M_RM32, M_NONE,   0x00, 0x00, 0xF7, 6,             0
+    dq s_mne_div, 3,  M_RM64, M_NONE,   0x00, 0x00, 0xF7, 6,             F_REX_W
+    dq s_mne_idiv, 4, M_RM32, M_NONE,   0x00, 0x00, 0xF7, 7,             0
+    dq s_mne_idiv, 4, M_RM64, M_NONE,   0x00, 0x00, 0xF7, 7,             F_REX_W
+
+    ; push / pop
+    dq s_mne_push, 4, M_REG64, M_NONE,  0x00, 0x00, 0x50, NO_MODRM,     F_OPCODE_REG_ADD
+    dq s_mne_pop, 3,  M_REG64, M_NONE,  0x00, 0x00, 0x58, NO_MODRM,     F_OPCODE_REG_ADD
+
+    ; in / out
+    dq s_mne_out, 3,  M_DX, M_AL,       0x00, 0x00, 0xEE, NO_MODRM,     0
+    dq s_mne_out, 3,  M_DX, M_EAX,      0x00, 0x00, 0xEF, NO_MODRM,     0
+    dq s_mne_out, 3,  M_DX, M_AX,       0x66, 0x00, 0xEF, NO_MODRM,     0
+    dq s_mne_in, 2,   M_AL, M_DX,       0x00, 0x00, 0xEC, NO_MODRM,     0
+    dq s_mne_in, 2,   M_EAX, M_DX,      0x00, 0x00, 0xED, NO_MODRM,     0
+    dq s_mne_in, 2,   M_AX, M_DX,       0x66, 0x00, 0xED, NO_MODRM,     0
+
+    ; System instructions
+    dq s_mne_lgdt, 4, M_MEM, M_NONE,    0x0F, 0x00, 0x01, 2,             0
+    dq s_mne_lidt, 4, M_MEM, M_NONE,    0x0F, 0x00, 0x01, 3,             0
+    dq s_mne_invlpg, 6, M_MEM, M_NONE,  0x0F, 0x00, 0x01, 7,             0
+    dq s_mne_rdmsr, 5, M_NONE, M_NONE,  0x0F, 0x32, 0x00, NO_MODRM,     0
+    dq s_mne_wrmsr, 5, M_NONE, M_NONE,  0x0F, 0x30, 0x00, NO_MODRM,     0
+    dq s_mne_cpuid, 5, M_NONE, M_NONE,  0x0F, 0xA2, 0x00, NO_MODRM,     0
+    dq s_mne_iretq, 5, M_NONE, M_NONE,  0x48, 0x00, 0xCF, NO_MODRM,     0
+    dq s_mne_int, 3,  M_IMM, M_NONE,    0x00, 0x00, 0xCD, NO_MODRM,     F_IMM8
+    dq s_mne_cli, 3,  M_NONE, M_NONE,  0x00, 0x00, 0xFA, NO_MODRM,     0
+    dq s_mne_sti, 3,  M_NONE, M_NONE,  0x00, 0x00, 0xFB, NO_MODRM,     0
+    dq s_mne_hlt, 3,  M_NONE, M_NONE,  0x00, 0x00, 0xF4, NO_MODRM,     0
+    dq s_mne_nop, 3,  M_NONE, M_NONE,  0x00, 0x00, 0x90, NO_MODRM,     0
+    dq s_mne_ret, 3,  M_NONE, M_NONE,  0x00, 0x00, 0xC3, NO_MODRM,     0
+    dq s_mne_syscall, 7, M_NONE, M_NONE, 0x0F, 0x05, 0x00, NO_MODRM,    0
+    dq 0, 0, 0, 0, 0, 0
+
+section .text
+
 x86_encode_asm_line:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 256
+
+    mov r12, rdi             ; str
+    mov r14, rsi             ; len
+    mov [rbp - 8], rdx       ; CodeBuf
+
+.trim_line:
+    test r14, r14
+    jz .done_line_td
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_trim_l
+    cmp al, 9
+    je .inc_trim_l
+    jmp .parsed_trim_l
+.inc_trim_l:
+    inc r12
+    dec r14
+    jmp .trim_line
+
+.parsed_trim_l:
+    test r14, r14
+    jz .done_line_td
+
+    mov [rbp - 16], r12
+    xor rcx, rcx
+.find_mne_end:
+    cmp rcx, r14
+    jge .got_mne_len
+    mov al, [r12 + rcx]
+    cmp al, ' '
+    je .got_mne_len
+    cmp al, 9
+    je .got_mne_len
+    cmp al, 10
+    je .got_mne_len
+    cmp al, 13
+    je .got_mne_len
+    inc rcx
+    jmp .find_mne_end
+
+.got_mne_len:
+    mov [rbp - 24], rcx
+
+    add r12, rcx
+    sub r14, rcx
+
+    lea rdi, [rbp - 160]
+    xor rax, rax
+    mov rcx, 16
+    rep stosq
+
+    mov qword [rbp - 32], 0
+
+.trim_before_op1:
+    test r14, r14
+    jz .do_table_match
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_trim_op1
+    cmp al, 9
+    je .inc_trim_op1
+    jmp .parse_op1
+.inc_trim_op1:
+    inc r12
+    dec r14
+    jmp .trim_before_op1
+
+.parse_op1:
+    test r14, r14
+    jz .do_table_match
+
+    mov rdi, r12
+    mov rcx, r14
+    call find_comma_or_end
+    mov r15, rax
+
+    mov rdi, r12
+    mov rsi, r15
+    lea rdx, [rbp - 96]
+    call parse_asm_operand
+
+    mov qword [rbp - 32], 1
+
+    add r12, r15
+    sub r14, r15
+
+    test r14, r14
+    jz .do_table_match
+    cmp byte [r12], ','
+    jne .do_table_match
+
+    inc r12
+    dec r14
+
+.trim_before_op2:
+    test r14, r14
+    jz .do_table_match
+    mov al, [r12]
+    cmp al, ' '
+    je .inc_trim_op2
+    cmp al, 9
+    je .inc_trim_op2
+    jmp .parse_op2
+.inc_trim_op2:
+    inc r12
+    dec r14
+    jmp .trim_before_op2
+
+.parse_op2:
+    test r14, r14
+    jz .do_table_match
+
+    mov rdi, r12
+    mov rcx, r14
+    call find_comma_or_end
+    mov r15, rax
+
+    mov rdi, r12
+    mov rsi, r15
+    lea rdx, [rbp - 160]
+    call parse_asm_operand
+
+    mov qword [rbp - 32], 2
+
+.do_table_match:
+    lea r15, [asm_table]
+
+.tbl_loop:
+    mov rax, [r15 + AsmTableEntry.mne_ptr]
+    test rax, rax
+    jz .mne_search_check
+
+    mov rcx, [r15 + AsmTableEntry.mne_len]
+    cmp rcx, [rbp - 24]
+    jne .tbl_next
+
+    mov rdi, [rbp - 16]
+    mov rsi, rax
+    mov rdx, rcx
+    call str_ncmp
+    test rax, rax
+    jnz .tbl_next
+
+    lea rdi, [rbp - 96]
+    mov rsi, [r15 + AsmTableEntry.op1_mask]
+    call operand_matches_mask
+    test rax, rax
+    jz .tbl_next
+
+    lea rdi, [rbp - 160]
+    mov rsi, [r15 + AsmTableEntry.op2_mask]
+    call operand_matches_mask
+    test rax, rax
+    jz .tbl_next
+
+    mov rax, [r15 + AsmTableEntry.flags]
+    test rax, F_SREG_DEST
+    jz .match_found
+    cmp qword [rbp - 96 + AsmOp.reg_code], 1
+    je .tbl_next
+
+.match_found:
+    mov rdi, [rbp - 8]
+    mov rsi, r15
+    lea rdx, [rbp - 96]
+    lea rcx, [rbp - 160]
+    call encode_asm_entry
+    jmp .done_line_td
+
+.tbl_next:
+    add r15, AsmTableEntry_size
+    jmp .tbl_loop
+
+.mne_search_check:
+    lea r15, [asm_table]
+.chk_mne_exist:
+    mov rax, [r15 + AsmTableEntry.mne_ptr]
+    test rax, rax
+    jz .err_unknown_mne
+
+    mov rcx, [r15 + AsmTableEntry.mne_len]
+    cmp rcx, [rbp - 24]
+    jne .chk_mne_next
+
+    mov rdi, [rbp - 16]
+    mov rsi, rax
+    mov rdx, rcx
+    call str_ncmp
+    test rax, rax
+    jz .err_invalid_ops
+
+.chk_mne_next:
+    add r15, AsmTableEntry_size
+    jmp .chk_mne_exist
+
+.err_unknown_mne:
+    mov rsi, err_asm_unknown_mne_1
+    call print_err
+    mov rsi, [rbp - 16]
+    mov rdx, [rbp - 24]
+    call print_err_bytes
+    mov rsi, err_asm_unknown_mne_2
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.err_invalid_ops:
+    mov rsi, err_asm_invalid_ops_1
+    call print_err
+    mov rsi, [rbp - 16]
+    mov rdx, [rbp - 24]
+    call print_err_bytes
+    mov rsi, err_asm_invalid_ops_2
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.done_line_td:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+find_comma_or_end:
+    push rbx
+    xor rax, rax
+    xor rbx, rbx
+.fce_loop:
+    cmp rax, rcx
+    jge .fce_done
+    mov dl, [rdi + rax]
+    cmp dl, '['
+    je .fce_open
+    cmp dl, ']'
+    je .fce_close
+    cmp dl, ','
+    je .fce_chk_comma
+.fce_next:
+    inc rax
+    jmp .fce_loop
+.fce_open:
+    mov rbx, 1
+    jmp .fce_next
+.fce_close:
+    xor rbx, rbx
+    jmp .fce_next
+.fce_chk_comma:
+    test rbx, rbx
+    jnz .fce_next
+.fce_done:
+    pop rbx
+    ret
+
+
+parse_asm_operand:
     push rbp
     mov rbp, rsp
     push rbx
@@ -2584,544 +3109,92 @@ x86_encode_asm_line:
     push r13
     push r14
 
-    mov r12, rdi             ; str
-    mov r14, rsi             ; len
-    mov r13, rdx             ; CodeBuf
+    mov r12, rdi
+    mov r13, rsi
+    mov r14, rdx
 
-.trim_loop:
-    test r14, r14
-    jz .done_line
+.po_trim:
+    test r13, r13
+    jz .po_none
     mov al, [r12]
     cmp al, ' '
-    jne .check_mnem
+    je .po_inc_trim
+    cmp al, 9
+    je .po_inc_trim
+    jmp .po_trim_trail
+.po_inc_trim:
     inc r12
-    dec r14
-    jmp .trim_loop
+    dec r13
+    jmp .po_trim
 
-.check_mnem:
-    ; Check "div"
-    mov rdi, r12
-    mov rsi, s_div
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jz .do_div
-
-    ; Check "xor"
-    mov rdi, r12
-    mov rsi, s_xor
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jz .do_xor
-
-    ; Check "out"
-    mov rdi, r12
-    mov rsi, s_out
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jz .do_out
-
-    ; Check "in"
-    mov rdi, r12
-    mov rsi, s_in
-    mov rdx, 2
-    call str_ncmp
-    test rax, rax
-    jz .do_in
-
-    ; Check "syscall"
-    mov rdi, r12
-    mov rsi, s_syscall
-    mov rdx, 7
-    call str_ncmp
-    test rax, rax
-    jnz .chk_ret
-
-    mov rdi, r13
-    mov sil, 0x0F
-    call emit_byte
-    mov sil, 0x05
-    call emit_byte
-    jmp .done_line
-
-.do_out:
-    add r12, 3
-    sub r14, 3
-.trim_out:
-    cmp byte [r12], ' '
-    jne .check_out_src
-    inc r12
-    dec r14
-    jmp .trim_out
-.check_out_src:
-    ; skip "dx", trim spaces/comma
-    add r12, 2
-    sub r14, 2
-.trim_out_comma:
-    mov al, [r12]
+.po_trim_trail:
+    test r13, r13
+    jz .po_none
+    mov al, [r12 + r13 - 1]
     cmp al, ' '
-    je .inc_out_c
-    cmp al, ','
-    je .inc_out_c
-    jmp .check_out_reg
-.inc_out_c:
-    inc r12
-    dec r14
-    jmp .trim_out_comma
-.check_out_reg:
-    cmp byte [r12], 'a'
-    jne .asm_err
-    cmp byte [r12 + 1], 'l'
-    je .out_al
-    cmp byte [r12 + 1], 'x'
-    je .out_eax
-    cmp byte [r12 + 1], 'e'
-    je .chk_out_eax
-    jmp .asm_err
-.chk_out_eax:
-    cmp byte [r12 + 2], 'x'
-    je .out_eax
-    jmp .asm_err
-.out_al:
-    mov rdi, r13
-    mov sil, 0xEE
-    call emit_byte
-    jmp .done_line
-.out_eax:
-    mov rdi, r13
-    mov sil, 0xEF
-    call emit_byte
-    jmp .done_line
+    je .po_dec_trail
+    cmp al, 9
+    je .po_dec_trail
+    cmp al, 10
+    je .po_dec_trail
+    cmp al, 13
+    je .po_dec_trail
+    jmp .po_start
+.po_dec_trail:
+    dec r13
+    jmp .po_trim_trail
 
-.do_div:
-    add r12, 3
-    sub r14, 3
-.trim_div:
-    cmp byte [r12], ' '
-    jne .check_div_reg
-    inc r12
-    dec r14
-    jmp .trim_div
-.check_div_reg:
-    mov rdi, r13
-    mov sil, 0xF7
-    call emit_byte
-    mov sil, 0xF1            ; div ecx (F7 F1)
-    call emit_byte
-    jmp .done_line
+.po_none:
+    mov qword [r14 + AsmOp.type], OP_NONE
+    jmp .po_done
 
-.do_xor:
-    add r12, 3
-    sub r14, 3
-.trim_xor:
-    cmp byte [r12], ' '
-    jne .check_xor_reg
-    inc r12
-    dec r14
-    jmp .trim_xor
-.check_xor_reg:
-    cmp byte [r12], 'e'
-    je .xor_ecx
-    cmp byte [r12], 'r'
-    je .xor_rax
-    jmp .asm_err
-.xor_ecx:
-    mov rdi, r13
-    mov sil, 0x31
-    call emit_byte
-    mov sil, 0xC9            ; xor ecx, ecx (31 C9)
-    call emit_byte
-    jmp .done_line
-.xor_rax:
-    mov rdi, r13
-    mov sil, 0x48
-    call emit_byte
-    mov sil, 0x31
-    call emit_byte
-    mov sil, 0xC0            ; xor rax, rax (48 31 C0)
-    call emit_byte
-    jmp .done_line
+.po_start:
+    cmp byte [r12], '['
+    je .po_mem
 
-.do_in:
-    add r12, 2
-    sub r14, 2
-.trim_in:
-    cmp byte [r12], ' '
-    jne .check_in_dest
-    inc r12
-    dec r14
-    jmp .trim_in
-.check_in_dest:
-    cmp byte [r12], 'a'
-    jne .asm_err
-    cmp byte [r12 + 1], 'l'
-    je .in_al
-    cmp byte [r12 + 1], 'e'
-    je .in_eax
-    jmp .asm_err
-.in_al:
-    mov rdi, r13
-    mov sil, 0xEC
-    call emit_byte
-    jmp .done_line
-.in_eax:
-    mov rdi, r13
-    mov sil, 0xED
-    call emit_byte
-    jmp .done_line
-
-.chk_ret:
     mov rdi, r12
-    mov rsi, s_ret
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jnz .chk_mov
+    mov rsi, r13
+    call lookup_register
+    cmp rax, -1
+    je .po_imm
 
-    mov rdi, r13
-    mov sil, 0xC3
-    call emit_byte
-    jmp .done_line
+    mov qword [r14 + AsmOp.type], OP_REG
+    mov [r14 + AsmOp.reg_kind], rax
+    mov [r14 + AsmOp.reg_code], rdx
+    jmp .po_done
 
-.chk_mov:
+.po_imm:
+    mov qword [r14 + AsmOp.type], OP_IMM
     mov rdi, r12
-    mov rsi, s_mov
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jnz .chk_add
-
-    add r12, 3
-    sub r14, 3
-
-.trim_mov:
-    cmp byte [r12], ' '
-    jne .parsed_mov
-    inc r12
-    dec r14
-    jmp .trim_mov
-
-.parsed_mov:
-    cmp byte [r12], 'e'
-    je .mov_dest_eax
-    cmp byte [r12], 'd'
-    jne .chk_mov_al
-    cmp byte [r12 + 1], 's'
-    je .mov_dest_ds
-    cmp byte [r12 + 1], 'x'
-    je .mov_dest_dx
-.chk_mov_al:
-    cmp byte [r12], 'a'
-    jne .chk_mov_r
-    cmp byte [r12 + 1], 'l'
-    je .mov_dest_al
-.chk_mov_r:
-    cmp byte [r12], 'r'
-    jne .asm_err
-
-    mov al, [r12 + 1]
-    cmp al, 'a'
-    je .mov_dest_rax
-    cmp al, 'd'
-    je .mov_dest_rdi
-
-    jmp .asm_err
-
-.mov_dest_ds:
-    mov rdi, r13
-    mov sil, 0x8E
-    call emit_byte
-    mov sil, 0xD8
-    call emit_byte
-    jmp .done_line
-
-.mov_dest_dx:
-    mov rdi, r13
-    mov sil, 0x66
-    call emit_byte
-    mov sil, 0xBA
-    call emit_byte
-
-    add r12, 2
-    sub r14, 2
-.trim_dx_comma:
-    mov al, [r12]
-    cmp al, ' '
-    je .inc_dx_c
-    cmp al, ','
-    je .inc_dx_c
-    jmp .parse_dx_imm
-.inc_dx_c:
-    inc r12
-    dec r14
-    jmp .trim_dx_comma
-.parse_dx_imm:
-    mov rdi, r12
-    mov rcx, r14
-    call parse_dec_int
-    push rax
-    mov rdi, r13
-    mov sil, al
-    call emit_byte
-    pop rax
-    shr rax, 8
-    mov rdi, r13
-    mov sil, al
-    call emit_byte
-    jmp .done_line
-
-.mov_dest_eax:
-    mov rdi, r13
-    mov sil, 0xB8
-    call emit_byte
-
-    add r12, 3
-    sub r14, 3
-.trim_eax_comma:
-    mov al, [r12]
-    cmp al, ' '
-    je .inc_eax_c
-    cmp al, ','
-    je .inc_eax_c
-    jmp .parse_eax_imm
-.inc_eax_c:
-    inc r12
-    dec r14
-    jmp .trim_eax_comma
-.parse_eax_imm:
-    mov rdi, r12
-    mov rcx, r14
-    call parse_dec_int
-    mov rdi, r13
-    mov esi, eax
-    call emit_dword
-    jmp .done_line
-
-.mov_dest_al:
-    mov rdi, r13
-    mov sil, 0xB0
-    call emit_byte
-
-    add r12, 2
-    sub r14, 2
-.trim_al_comma:
-    mov al, [r12]
-    cmp al, ' '
-    je .inc_al_c
-    cmp al, ','
-    je .inc_al_c
-    jmp .parse_al_imm
-.inc_al_c:
-    inc r12
-    dec r14
-    jmp .trim_al_comma
-.parse_al_imm:
-    mov rdi, r12
-    mov rcx, r14
-    call parse_dec_int
-    mov rdi, r13
-    mov sil, al
-    call emit_byte
-    jmp .done_line
-
-.mov_dest_rax:
-    mov rdi, r13
-    mov sil, 0x48
-    call emit_byte
-    mov sil, 0xB8
-    call emit_byte
-
-    add r12, 4
-    sub r14, 4
-.trim_imm1:
-    mov al, [r12]
-    cmp al, ' '
-    je .inc_imm1_c
-    cmp al, ','
-    je .inc_imm1_c
-    jmp .parse_imm1
-.inc_imm1_c:
-    inc r12
-    dec r14
-    jmp .trim_imm1
-.parse_imm1:
-    mov rdi, r12
-    mov rcx, r14
+    mov rcx, r13
     xor rsi, rsi
     call parse_int_literal
-    mov rdi, r13
-    mov rsi, rax
-    call emit_qword
-    jmp .done_line
+    mov [r14 + AsmOp.imm_val], rax
+    jmp .po_done
 
-.mov_dest_rdi:
-    cmp byte [r12 + 5], 'r'
-    je .mov_rdi_rax
+.po_mem:
+    mov qword [r14 + AsmOp.type], OP_MEM
+    mov qword [r14 + AsmOp.mem_base], -1
+    mov qword [r14 + AsmOp.mem_idx], -1
+    mov qword [r14 + AsmOp.mem_scale], 0
+    mov qword [r14 + AsmOp.mem_disp], 0
 
-    mov rdi, r13
-    mov sil, 0x48
-    call emit_byte
-    mov sil, 0xC7
-    call emit_byte
-    mov sil, 0xC7
-    call emit_byte
-
-    add r12, 4
-    sub r14, 4
-.trim_imm2:
-    cmp byte [r12], ' '
-    jne .parse_imm2
     inc r12
-    dec r14
-    jmp .trim_imm2
-.parse_imm2:
+    dec r13
+    cmp byte [r12 + r13 - 1], ']'
+    jne .po_mem_err
+    dec r13
+
     mov rdi, r12
-    mov rcx, r14
-    call parse_dec_int
-    mov rdi, r13
-    mov esi, eax
-    call emit_dword
-    jmp .done_line
+    mov rsi, r13
+    mov rdx, r14
+    call parse_mem_expr
+    jmp .po_done
 
-.mov_rdi_rax:
-    mov rdi, r13
-    mov sil, 0x48
-    call emit_byte
-    mov sil, 0x89
-    call emit_byte
-    mov sil, 0xC7
-    call emit_byte
-    jmp .done_line
+.po_mem_err:
+    mov qword [r14 + AsmOp.type], OP_NONE
 
-.chk_add:
-    mov rdi, r12
-    mov rsi, s_add
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jnz .chk_sub
-
-    mov rdi, r13
-    mov sil, 0x48
-    call emit_byte
-    mov sil, 0x01
-    call emit_byte
-    mov sil, 0xD8
-    call emit_byte
-    jmp .done_line
-
-.chk_sub:
-    mov rdi, r12
-    mov rsi, s_sub
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jnz .chk_push
-
-    mov rdi, r13
-    mov sil, 0x48
-    call emit_byte
-    mov sil, 0x29
-    call emit_byte
-    mov sil, 0xD8
-    call emit_byte
-    jmp .done_line
-
-.chk_push:
-    mov rdi, r12
-    mov rsi, s_push
-    mov rdx, 4
-    call str_ncmp
-    test rax, rax
-    jnz .chk_pop
-
-    add r12, 4
-    sub r14, 4
-.trim_push:
-    mov al, [r12]
-    cmp al, ' '
-    je .inc_push_c
-    jmp .parsed_push
-.inc_push_c:
-    inc r12
-    dec r14
-    jmp .trim_push
-
-.parsed_push:
-    cmp byte [r12], 'r'
-    jne .push_default
-    mov al, [r12 + 1]
-    cmp al, 'a'
-    je .push_rax
-    cmp al, 'b'
-    je .push_rbx
-    cmp al, 'd'
-    je .push_rdi
-
-.push_default:
-.push_rbx:
-    mov rdi, r13
-    mov sil, 0x53
-    call emit_byte
-    jmp .done_line
-
-.push_rax:
-    mov rdi, r13
-    mov sil, 0x50
-    call emit_byte
-    jmp .done_line
-
-.push_rdi:
-    mov rdi, r13
-    mov sil, 0x57
-    call emit_byte
-    jmp .done_line
-
-.chk_pop:
-    mov rdi, r12
-    mov rsi, s_pop
-    mov rdx, 3
-    call str_ncmp
-    test rax, rax
-    jnz .asm_err
-
-    add r12, 3
-    sub r14, 3
-.trim_pop:
-    mov al, [r12]
-    cmp al, ' '
-    je .inc_pop_c
-    jmp .parsed_pop
-.inc_pop_c:
-    inc r12
-    dec r14
-    jmp .trim_pop
-
-.parsed_pop:
-    cmp byte [r12], 'r'
-    jne .pop_default
-    mov al, [r12 + 1]
-    cmp al, 'a'
-    je .pop_rax
-    cmp al, 'b'
-    je .pop_rbx
-
-.pop_default:
-.pop_rbx:
-    mov rdi, r13
-    mov sil, 0x5B
-    call emit_byte
-    jmp .done_line
-
-.pop_rax:
-    mov rdi, r13
-    mov sil, 0x58
-    call emit_byte
-    jmp .done_line
-
-.done_line:
+.po_done:
     pop r14
     pop r13
     pop r12
@@ -3129,26 +3202,709 @@ x86_encode_asm_line:
     pop rbp
     ret
 
-.asm_err:
-    mov rsi, err_unsupported_asm
+
+lookup_register:
+    push rbx
+    push r12
+    push r13
+
+    mov r12, rdi
+    mov r13, rsi
+
+    lea rbx, [reg_table]
+.reg_loop:
+    mov rax, [rbx]
+    test rax, rax
+    jz .reg_not_found
+
+    mov rdx, [rbx + 8]
+    cmp rdx, r13
+    jne .reg_next
+
+    mov rdi, r12
+    mov rsi, rax
+    mov rdx, r13
+    call str_ncmp
+    test rax, rax
+    jz .reg_found
+
+.reg_next:
+    add rbx, 32
+    jmp .reg_loop
+
+.reg_found:
+    mov rax, [rbx + 16]
+    mov rdx, [rbx + 24]
+    jmp .reg_done
+
+.reg_not_found:
+    mov rax, -1
+    mov rdx, -1
+
+.reg_done:
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+
+parse_mem_expr:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi             ; str
+    mov r13, rsi             ; len
+    mov r14, rdx             ; op_struct
+
+.pme_loop:
+    test r13, r13
+    jz .pme_done
+
+    xor r15, r15
+    mov rbx, 1
+    cmp byte [r12], '-'
+    jne .pme_scan_term
+    mov rbx, -1
+    inc r12
+    dec r13
+
+.pme_scan_term:
+    cmp r15, r13
+    jge .pme_got_term
+    mov al, [r12 + r15]
+    cmp al, '+'
+    je .pme_got_term
+    cmp al, '-'
+    je .pme_got_term
+    inc r15
+    jmp .pme_scan_term
+
+.pme_got_term:
+    test r15, r15
+    jz .pme_next_term
+
+    mov rdi, r12
+    mov rsi, r15
+    call check_term_has_star
+    test rax, rax
+    jnz .pme_star_term
+
+    mov rdi, r12
+    mov rsi, r15
+    call lookup_register
+    cmp rax, -1
+    je .pme_disp_term
+
+    cmp qword [r14 + AsmOp.mem_base], -1
+    jne .pme_as_idx
+    mov [r14 + AsmOp.mem_base], rdx
+    jmp .pme_next_term
+
+.pme_as_idx:
+    mov [r14 + AsmOp.mem_idx], rdx
+    mov qword [r14 + AsmOp.mem_scale], 1
+    jmp .pme_next_term
+
+.pme_star_term:
+    mov r8, rax
+    mov rdi, r12
+    mov rsi, r8
+    call lookup_register
+    cmp rax, -1
+    je .pme_next_term
+    mov [r14 + AsmOp.mem_idx], rdx
+
+    lea rdi, [r12 + r8 + 1]
+    mov rcx, r15
+    sub rcx, r8
+    dec rcx
+    xor rsi, rsi
+    call parse_int_literal
+    cmp rax, 1
+    je .valid_scale
+    cmp rax, 2
+    je .valid_scale
+    cmp rax, 4
+    je .valid_scale
+    cmp rax, 8
+    je .valid_scale
+    jmp .invalid_ops_exit
+.valid_scale:
+    mov [r14 + AsmOp.mem_scale], rax
+    jmp .pme_next_term
+
+.pme_disp_term:
+    mov rdi, r12
+    mov rcx, r15
+    xor rsi, rsi
+    call parse_int_literal
+    cmp rbx, -1
+    jne .add_disp
+    neg rax
+.add_disp:
+    add [r14 + AsmOp.mem_disp], rax
+
+.pme_next_term:
+    add r12, r15
+    sub r13, r15
+    test r13, r13
+    jz .pme_done
+    mov al, [r12]
+    cmp al, '+'
+    je .pme_skip_sign
+    cmp al, '-'
+    je .pme_skip_sign
+    jmp .pme_loop
+.pme_skip_sign:
+    jmp .pme_loop
+
+.pme_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.invalid_ops_exit:
+    mov rsi, err_asm_invalid_ops_1
+    call print_err
+    mov rsi, [rbp - 16]
+    mov rdx, [rbp - 24]
+    call print_err_bytes
+    mov rsi, err_asm_invalid_ops_2
     call print_err
     mov rdi, 1
     call sys_exit
 
-err_free_print:
-    mov rsi, err_freestanding_print
+
+check_term_has_star:
+    xor rax, rax
+.cts_loop:
+    cmp rax, rsi
+    jge .cts_none
+    cmp byte [rdi + rax], '*'
+    je .cts_found
+    inc rax
+    jmp .cts_loop
+.cts_found:
+    ret
+.cts_none:
+    xor rax, rax
+    ret
+
+
+operand_matches_mask:
+    push rbx
+    mov rax, [rdi + AsmOp.type]
+
+    cmp rsi, M_NONE
+    jne .m_check_type
+    cmp rax, OP_NONE
+    je .m_yes
+    jmp .m_no
+
+.m_check_type:
+    cmp rax, OP_NONE
+    je .m_no
+
+    cmp rax, OP_IMM
+    jne .m_chk_reg
+    test rsi, M_IMM
+    jnz .m_yes
+    jmp .m_no
+
+.m_chk_reg:
+    cmp rax, OP_REG
+    jne .m_chk_mem
+
+    mov rbx, [rdi + AsmOp.reg_kind]
+    cmp rbx, REG_GPR64
+    jne .m_c32
+    test rsi, M_REG64
+    jnz .m_yes
+    jmp .m_no
+
+.m_c32:
+    cmp rbx, REG_GPR32
+    jne .m_c16
+    test rsi, M_REG32
+    jnz .m_yes
+    test rsi, M_EAX
+    jz .m_no
+    cmp qword [rdi + AsmOp.reg_code], 0
+    je .m_yes
+    jmp .m_no
+
+.m_c16:
+    cmp rbx, REG_GPR16
+    jne .m_c8
+    test rsi, M_REG16
+    jnz .m_yes
+    test rsi, M_AX
+    jz .m_chk_dx
+    cmp qword [rdi + AsmOp.reg_code], 0
+    je .m_yes
+.m_chk_dx:
+    test rsi, M_DX
+    jz .m_no
+    cmp qword [rdi + AsmOp.reg_code], 2
+    je .m_yes
+    jmp .m_no
+
+.m_c8:
+    cmp rbx, REG_GPR8
+    jne .m_csreg
+    test rsi, M_REG8
+    jnz .m_yes
+    test rsi, M_AL
+    jz .m_no
+    cmp qword [rdi + AsmOp.reg_code], 0
+    je .m_yes
+    jmp .m_no
+
+.m_csreg:
+    cmp rbx, REG_SREG
+    jne .m_ccr
+    test rsi, M_SREG
+    jnz .m_yes
+    jmp .m_no
+
+.m_ccr:
+    cmp rbx, REG_CR
+    jne .m_no
+    test rsi, M_CR
+    jnz .m_yes
+    jmp .m_no
+
+.m_chk_mem:
+    cmp rax, OP_MEM
+    jne .m_no
+    test rsi, M_MEM
+    jnz .m_yes
+    jmp .m_no
+
+.m_yes:
+    mov rax, 1
+    pop rbx
+    ret
+.m_no:
+    xor rax, rax
+    pop rbx
+    ret
+
+
+encode_asm_entry:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi             ; CodeBuf
+    mov r13, rsi             ; TableEntry
+    mov r14, rdx             ; Op1
+    mov r15, rcx             ; Op2
+
+    xor rbx, rbx
+    mov rax, [r13 + AsmTableEntry.flags]
+    test rax, F_REX_W
+    jz .chk_rex_regs
+    or rbx, 8
+
+.chk_rex_regs:
+    mov rax, [r13 + AsmTableEntry.modrm_reg]
+    cmp rax, REG_FROM_OP1
+    je .reg_r_op1
+    cmp rax, REG_FROM_OP2
+    je .reg_r_op2
+    jmp .chk_rm_rex
+
+.reg_r_op1:
+    mov rax, [r14 + AsmOp.reg_code]
+    cmp rax, 8
+    jl .chk_rm_rex
+    or rbx, 4
+    jmp .chk_rm_rex
+
+.reg_r_op2:
+    mov rax, [r15 + AsmOp.reg_code]
+    cmp rax, 8
+    jl .chk_rm_rex
+    or rbx, 4
+
+.chk_rm_rex:
+    lea rdx, [r14]
+    mov rax, [r13 + AsmTableEntry.modrm_reg]
+    cmp rax, REG_FROM_OP1
+    jne .rm_r_op1
+    lea rdx, [r15]
+.rm_r_op1:
+    cmp qword [rdx + AsmOp.type], OP_REG
+    jne .rm_m_rex
+
+    mov rax, [rdx + AsmOp.reg_code]
+    cmp rax, 8
+    jl .emit_pfx
+    or rbx, 1
+    jmp .emit_pfx
+
+.rm_m_rex:
+    cmp qword [rdx + AsmOp.type], OP_MEM
+    jne .emit_pfx
+
+    mov rax, [rdx + AsmOp.mem_base]
+    cmp rax, 8
+    jl .chk_m_idx_rex
+    or rbx, 1
+
+.chk_m_idx_rex:
+    mov rax, [rdx + AsmOp.mem_idx]
+    cmp rax, 8
+    jl .emit_pfx
+    or rbx, 2
+
+.emit_pfx:
+    test rbx, rbx
+    jz .do_pfx1_e
+    mov rdi, r12
+    mov sil, bl
+    or sil, 0x40
+    call emit_byte
+
+.do_pfx1_e:
+    mov rax, [r13 + AsmTableEntry.pfx1]
+    test rax, rax
+    jz .do_pfx2_e
+    mov rdi, r12
+    mov sil, al
+    call emit_byte
+
+.do_pfx2_e:
+    mov rax, [r13 + AsmTableEntry.pfx2]
+    test rax, rax
+    jz .do_opcode_e
+    mov rdi, r12
+    mov sil, al
+    call emit_byte
+
+.do_opcode_e:
+    mov rax, [r13 + AsmTableEntry.opcode]
+    mov sil, al
+    mov rcx, [r13 + AsmTableEntry.flags]
+    test rcx, F_OPCODE_REG_ADD
+    jz .emit_op_b
+    mov rax, [r14 + AsmOp.reg_code]
+    and rax, 7
+    add sil, al
+
+.emit_op_b:
+    mov rdi, r12
+    call emit_byte
+
+    mov rax, [r13 + AsmTableEntry.modrm_reg]
+    cmp rax, NO_MODRM
+    je .do_immediates_e
+
+.do_modrm_e:
+    mov rax, [r13 + AsmTableEntry.modrm_reg]
+    cmp rax, REG_FROM_OP1
+    je .reg_v1
+    cmp rax, REG_FROM_OP2
+    je .reg_v2
+    mov r8, rax
+    jmp .got_reg_val
+
+.reg_v1:
+    mov r8, [r14 + AsmOp.reg_code]
+    and r8, 7
+    jmp .got_reg_val
+
+.reg_v2:
+    mov r8, [r15 + AsmOp.reg_code]
+    and r8, 7
+
+.got_reg_val:
+    lea rsi, [r14]
+    mov rax, [r13 + AsmTableEntry.modrm_reg]
+    cmp rax, REG_FROM_OP1
+    jne .got_rm_op
+    lea rsi, [r15]
+
+.got_rm_op:
+    mov rdi, r12
+    mov rdx, r8
+    call encode_modrm_sib_bytes
+
+.do_immediates_e:
+    mov rax, [r13 + AsmTableEntry.flags]
+    test rax, F_IMM8
+    jnz .imm_8
+    test rax, F_IMM16
+    jnz .imm_16
+    test rax, F_IMM32
+    jnz .imm_32
+    test rax, F_IMM64
+    jnz .imm_64
+    jmp .enc_entry_done
+
+.imm_8:
+    mov rdi, r12
+    mov sil, [r15 + AsmOp.imm_val]
+    cmp qword [r15 + AsmOp.type], OP_IMM
+    je .e_im8
+    mov sil, [r14 + AsmOp.imm_val]
+.e_im8:
+    call emit_byte
+    jmp .enc_entry_done
+
+.imm_16:
+    mov rdi, r12
+    mov rax, [r15 + AsmOp.imm_val]
+    cmp qword [r15 + AsmOp.type], OP_IMM
+    je .e_im16
+    mov rax, [r14 + AsmOp.imm_val]
+.e_im16:
+    push rax
+    mov sil, al
+    call emit_byte
+    pop rax
+    shr rax, 8
+    mov sil, al
+    call emit_byte
+    jmp .enc_entry_done
+
+.imm_32:
+    mov rdi, r12
+    mov eax, [r15 + AsmOp.imm_val]
+    cmp qword [r15 + AsmOp.type], OP_IMM
+    je .e_im32
+    mov eax, [r14 + AsmOp.imm_val]
+.e_im32:
+    mov esi, eax
+    call emit_dword
+    jmp .enc_entry_done
+
+.imm_64:
+    mov rdi, r12
+    mov rax, [r15 + AsmOp.imm_val]
+    cmp qword [r15 + AsmOp.type], OP_IMM
+    je .e_im64
+    mov rax, [r14 + AsmOp.imm_val]
+.e_im64:
+    mov rsi, rax
+    call emit_qword
+    jmp .enc_entry_done
+
+.enc_entry_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+
+encode_modrm_sib_bytes:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi             ; CodeBuf
+    mov r13, rsi             ; rm_op
+    mov r14, rdx             ; reg_val (0..7)
+
+    cmp qword [r13 + AsmOp.type], OP_REG
+    je .enc_reg_direct
+
+    mov rax, [r13 + AsmOp.mem_base]
+    cmp rax, -1
+    jne .enc_mem_base
+
+    ; [imm32] (Absolute Address)
+    mov rax, [r13 + AsmOp.mem_disp]
+    mov rbx, 0xFFFFFFFF
+    cmp rax, rbx
+    ja .imm32_range_err
+
+    mov sil, r14b
+    and sil, 7
+    shl sil, 3
+    or sil, 4
+    mov rdi, r12
+    call emit_byte
+
+    mov rdi, r12
+    mov sil, 0x25
+    call emit_byte
+
+    mov rdi, r12
+    mov esi, [r13 + AsmOp.mem_disp]
+    call emit_dword
+    jmp .enc_m_done
+
+.imm32_range_err:
+    mov rsi, err_asm_invalid_ops_1
+    call print_err
+    mov rsi, [rbp - 16]
+    mov rdx, [rbp - 24]
+    call print_err_bytes
+    mov rsi, err_asm_invalid_ops_2
     call print_err
     mov rdi, 1
     call sys_exit
 
-err_free_input:
-    mov rsi, err_freestanding_input
-    call print_err
-    mov rdi, 1
-    call sys_exit
+.enc_mem_base:
+    mov rbx, [r13 + AsmOp.mem_base]
+    and rbx, 7
 
-err_free_alloc:
-    mov rsi, err_freestanding_alloc
-    call print_err
-    mov rdi, 1
-    call sys_exit
+    mov r15, [r13 + AsmOp.mem_idx]
+    cmp r15, -1
+    jne .need_sib
+    cmp rbx, 4
+    je .need_sib
+    xor r8, r8
+    jmp .chk_mod
+
+.need_sib:
+    mov r8, 1
+
+.chk_mod:
+    mov r10, [r13 + AsmOp.mem_disp]
+    test r10, r10
+    jnz .chk_disp8
+
+    cmp rbx, 5
+    je .mod_01
+    xor r9, r9
+    jmp .emit_modrm
+
+.chk_disp8:
+    cmp r10, -128
+    jl .mod_10
+    cmp r10, 127
+    jg .mod_10
+
+.mod_01:
+    mov r9, 1
+    jmp .emit_modrm
+
+.mod_10:
+    mov r9, 2
+
+.emit_modrm:
+    mov sil, r9b
+    shl sil, 6
+    mov al, r14b
+    and al, 7
+    shl al, 3
+    or sil, al
+
+    test r8, r8
+    jnz .rm_is_4
+    mov al, bl
+    and al, 7
+    or sil, al
+    jmp .write_modrm
+
+.rm_is_4:
+    or sil, 4
+
+.write_modrm:
+    mov rdi, r12
+    call emit_byte
+
+    test r8, r8
+    jz .emit_disp
+
+    mov rax, [r13 + AsmOp.mem_scale]
+    cmp rax, 8
+    je .sc_3
+    cmp rax, 4
+    je .sc_2
+    cmp rax, 2
+    je .sc_1
+    xor sil, sil
+    jmp .got_sc
+
+.sc_3:
+    mov sil, 3 << 6
+    jmp .got_sc
+.sc_2:
+    mov sil, 2 << 6
+    jmp .got_sc
+.sc_1:
+    mov sil, 1 << 6
+
+.got_sc:
+    mov rax, r15
+    cmp rax, -1
+    jne .got_idx_code
+    mov rax, 4
+
+.got_idx_code:
+    and rax, 7
+    shl rax, 3
+    or sil, al
+    mov al, bl
+    and al, 7
+    or sil, al
+
+    mov rdi, r12
+    call emit_byte
+
+.emit_disp:
+    cmp r9, 1
+    je .emit_d8
+    cmp r9, 2
+    je .emit_d32
+    cmp rbx, 5
+    je .emit_d32
+    jmp .enc_m_done
+
+.emit_d8:
+    mov rdi, r12
+    mov sil, r10b
+    call emit_byte
+    jmp .enc_m_done
+
+.emit_d32:
+    mov rdi, r12
+    mov esi, r10d
+    call emit_dword
+    jmp .enc_m_done
+
+.enc_reg_direct:
+    mov sil, 3 << 6
+    mov al, r14b
+    and al, 7
+    shl al, 3
+    or sil, al
+    mov rax, [r13 + AsmOp.reg_code]
+    and rax, 7
+    or sil, al
+
+    mov rdi, r12
+    call emit_byte
+
+.enc_m_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret

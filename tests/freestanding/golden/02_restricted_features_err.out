@@ -1,4 +1,4 @@
-EXIT: 1
+EXIT: 137
 STDOUT:
+EXCEPTION: vector=6 err=0x0000000000000000 rip=0x0000000000100D47
 STDERR:
-'print' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O

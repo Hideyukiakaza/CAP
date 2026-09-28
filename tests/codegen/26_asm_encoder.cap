@@ -1,0 +1,12 @@
+fn main():
+    a = 10
+    b = 20
+    asm:
+        mov rax, 42
+        mov rbx, rax
+        add rax, rbx
+        sub rax, 42
+        xor rcx, rcx
+        push rax
+        pop rdx
+    return a + b + 12
