@@ -103,7 +103,7 @@ EOF
     # Check x86-64
     if [ "$base" = "27_asm_table_opcodes" ]; then
         local enc_err=0
-        for pattern in "8e db" "f7 f3" "48 8b 43 08" "0f 01 18" "48 81 e8 2a 00 00 00"; do
+        for pattern in "8e db" "f7 f3" "48 8b 43 08" "48 89 48 08" "0f 01 18" "48 81 e8 2a 00 00 00"; do
             if ! echo "$obj_hex_27" | grep -q "$pattern"; then
                 echo "FAIL     $base (x86-64: missing encoding '$pattern')"
                 enc_err=1

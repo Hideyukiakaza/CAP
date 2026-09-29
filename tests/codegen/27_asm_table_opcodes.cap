@@ -3,6 +3,7 @@ fn main():
         mov ds, bx
         div ebx
         mov rax, [rbx + 8]
+        mov [rax + 8], rcx
         lidt [rax]
         sub rax, 42
     return 0

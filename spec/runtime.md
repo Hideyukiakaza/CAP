@@ -25,6 +25,22 @@ When a runtime trap fires, CAP executables write a diagnostic error message to `
 | Hosted | `RuntimeError: division by zero` + exit 101 | `RuntimeError: integer overflow` + exit 101 |
 | Freestanding | Raw `cqo; idiv rbx` — hardware `#DE` (vector 0 on IDT) | Raw `cqo; idiv rbx` — hardware `#DE` |
 
+## Freestanding GDT & IDT Stub Layout
+
+- **GDT Selectors & Limit:**
+  - Limit: `0x0017` (23 = 3 x 8-byte descriptors).
+  - Selector `0x08`: 64-bit Code Segment (`0x00AF9A000000FFFF`).
+  - Selector `0x10`: 64-bit Data Segment (`0x00CF92000000FFFF`).
+  - GDTR pseudo-descriptor image: 10 bytes (`limit: u16`, `base: u64`).
+
+- **IDT Gates & Printer Stub:**
+  - Base: `0x100500`, Limit: `0x01FF` (32 x 16-byte gate descriptors).
+  - 64-bit Interrupt Gate attribute bits: `0x8E00` (P=1, DPL=0, Type=0xE 64-bit Interrupt Gate).
+  - Gate Packing:
+    - `lo = (handler & 0xFFFF) | (selector << 16) | (0x8E00 << 32) | (((handler >> 16) & 0xFFFF) << 48)`
+    - `hi = (handler >> 32) & 0xFFFFFFFF`
+  - IDT Exception Printer Address: `0x100C37` (outputs `EXCEPTION: vector=<dec> err=0x<16 hex> rip=0x<16 hex>\n` to serial port `0x3F8`).
+
 ## Bitwise Operators
 
 - Bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`) operate on 64-bit two's complement integers.

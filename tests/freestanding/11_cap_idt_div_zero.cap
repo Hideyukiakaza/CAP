@@ -1,0 +1,37 @@
+struct Gate:
+    lo: Int
+    hi: Int
+
+fn make_interrupt_gate(handler: Int, selector: Int):
+    off0 = handler & 0xFFFF
+    off1 = (handler >> 16) & 0xFFFF
+    off2 = (handler >> 32) & 0xFFFFFFFF
+    lo = off0 | (selector << 16) | (0x8E00 << 32) | (off1 << 48)
+    hi = off2
+    return Gate{lo: lo, hi: hi}
+
+fn main():
+    handler = 0x100C37
+    selector = 8
+    off0 = handler & 0xFFFF
+    off1 = (handler >> 16) & 0xFFFF
+    off2 = (handler >> 32) & 0xFFFFFFFF
+    glo = off0 | (selector << 16) | (0x8E00 << 32) | (off1 << 48)
+    ghi = off2
+
+    asm:
+        mov rdi, 0x100500
+        mov rax, [rbp - 88]
+        mov [rdi], rax
+        mov rax, [rbp - 104]
+        mov [rdi + 8], rax
+
+        mov rax, 0x100400
+        mov rbx, 0x01FF
+        mov [rax], rbx
+        mov rbx, 0x100500
+        mov [rax + 2], rbx
+        lidt [rax]
+
+    x = 1 / 0
+    return x
