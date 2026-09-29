@@ -41,6 +41,7 @@
 %define KW_ASM       17
 %define KW_IMPORT    18
 %define KW_RANGE     19
+%define KW_NAKED     20
 
 struc Token
     .type: resq 1

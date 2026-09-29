@@ -10,6 +10,7 @@ s_flag_a:            db "-a", 0
 s_flag_o:            db "-o", 0
 s_flag_freestanding: db "--freestanding", 0
 s_flag_k:            db "-k", 0
+s_flag_no_boot_stub: db "--no-boot-stub", 0
 err_usage:           db "Usage: capc [-a] [--freestanding|-k] [-o <outfile>] [--dump-ast] <filename.cap>", 10, 0
 err_open:      db "Error: Could not open source file", 10, 0
 err_read:      db "Error: Could not read source file", 10, 0
@@ -74,8 +75,19 @@ _start:
     mov rsi, s_flag_freestanding
     call str_cmp
     test rax, rax
-    jnz .chk_o
+    jnz .chk_no_boot_stub
+    cmp qword [target_arch], TARGET_NO_BOOT_STUB
+    je .parse_args_loop
     mov qword [target_arch], TARGET_FREESTANDING
+    jmp .parse_args_loop
+
+.chk_no_boot_stub:
+    mov rdi, rbx
+    mov rsi, s_flag_no_boot_stub
+    call str_cmp
+    test rax, rax
+    jnz .chk_o
+    mov qword [target_arch], TARGET_NO_BOOT_STUB
     jmp .parse_args_loop
 
 .chk_o:

@@ -1,5 +1,4 @@
-EXIT: 101
+EXIT: 0
 STDOUT:
-Enter name: 
+Enter name: 70368752640010
 STDERR:
-RuntimeError: type mismatch in arithmetic operation

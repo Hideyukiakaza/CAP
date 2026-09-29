@@ -1098,16 +1098,18 @@ arm_emit_expr:
     ; ldr x2, [sp], #16 -> 0xF84107E2 (left val)
     EMIT_ARM 0xF84107E2
 
-    ; Check if left tag (x3) == 3 or right tag (x1) == 3
-    ; cmp x3, #3 -> 0xF1000C7F
-    EMIT_ARM 0xF1000C7F
-    ; b.eq +12 -> 0x54000060 (trap)
-    EMIT_ARM 0x54000060
+    ; Check if left tag (x3) != 1 or right tag (x1) != 1
+    ; cmp x3, #1 -> 0xF100047F
+    EMIT_ARM 0xF100047F
+    ; b.ne +12 -> 0x54000061 (trap)
+    EMIT_ARM 0x54000061
 
-    ; cmp x1, #3 -> 0xF1000C3F
-    EMIT_ARM 0xF1000C3F
-    ; b.ne +8 -> 0x54000041 (skip)
+    ; cmp x1, #1 -> 0xF100043F
+    EMIT_ARM 0xF100043F
+    ; b.ne +8 -> 0x54000041 (trap)
     EMIT_ARM 0x54000041
+    ; b +8 -> 0x14000002 (skip trap)
+    EMIT_ARM 0x14000002
 
     ; Trigger type_mismatch_trap
     mov rax, [armstate + ArmState.type_mismatch_off]
@@ -1119,42 +1121,42 @@ arm_emit_expr:
     EMIT_ARM eax
 
     ; Op
-    mov rbx, [r12 + ASTNode.val]
-    mov cl, [rbx]
-    mov ch, [rbx + 1]
+    mov r11, [r12 + ASTNode.val]
+    mov r8b, [r11]
+    mov r9b, [r11 + 1]
 
-    cmp cl, '&'
+    cmp r8b, '&'
     je .op_band_arm
-    cmp cl, '|'
+    cmp r8b, '|'
     je .op_bor_arm
-    cmp cl, '^'
+    cmp r8b, '^'
     je .op_bxor_arm
-    cmp cl, '<'
+    cmp r8b, '<'
     je .chk_shl_arm
-    cmp cl, '>'
+    cmp r8b, '>'
     je .chk_shr_arm
 
-    cmp cl, '+'
+    cmp r8b, '+'
     je .op_add
-    cmp cl, '-'
+    cmp r8b, '-'
     je .op_sub
-    cmp cl, '*'
+    cmp r8b, '*'
     je .op_mul
-    cmp cl, '/'
+    cmp r8b, '/'
     je .op_div
-    cmp cl, '%'
+    cmp r8b, '%'
     je .op_mod
-    cmp cl, '='
+    cmp r8b, '='
     je .op_eq
     jmp .done
 
 .chk_shl_arm:
-    cmp ch, '<'
+    cmp r9b, '<'
     je .op_shl_arm
     jmp .op_lt
 
 .chk_shr_arm:
-    cmp ch, '>'
+    cmp r9b, '>'
     je .op_shr_arm
     jmp .op_gt
 
@@ -1318,6 +1320,20 @@ arm_emit_expr:
 .op_bnot_arm:
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_expr
+    ; cmp x1, #1 -> 0xF100043F
+    EMIT_ARM 0xF100043F
+    ; b.eq +8 -> 0x54000040 (skip trap)
+    EMIT_ARM 0x54000040
+
+    ; Trigger type_mismatch_trap
+    mov rax, [armstate + ArmState.type_mismatch_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax
+
     ; mvn x0, x0 -> 0xAA2003E0
     EMIT_ARM 0xAA2003E0
     ; mov x1, #1 -> 0xD2800021

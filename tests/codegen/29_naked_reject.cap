@@ -1,0 +1,3 @@
+naked fn main():
+    x = 1
+    return x

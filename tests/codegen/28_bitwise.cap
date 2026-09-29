@@ -1,3 +1,18 @@
+/*/ Expected:
+/*/ STDOUT:
+/*/ 15
+/*/ 255
+/*/ 240
+/*/ 8
+/*/ 4
+/*/ -4
+/*/ -1
+/*/ 1
+/*/ 12
+/*/ 8
+/*/ 1
+/*/ 0
+/*/ 0
 fn main():
     print(0xFF & 0x0F)
     print(0xF0 | 0x0F)
@@ -10,4 +25,6 @@ fn main():
     print(2 * 3 << 1)
     print(1 << 2 + 1)
     print(1 | 2 & 4)
+    print(~~0)
+    print(~-1)
     return 0

@@ -73,6 +73,8 @@ x86_emit_program:
 
     cmp r14, TARGET_FREESTANDING
     je .emit_freestanding_start
+    cmp r14, TARGET_NO_BOOT_STUB
+    je .emit_functions
 
     ; --- HOSTED _start ---
     ; call main (E8 <rel32>) - place-holder rel32 = 0
@@ -206,6 +208,9 @@ x86_emit_program:
     jmp .fn_loop
 
 .done_fns:
+    cmp r14, TARGET_NO_BOOT_STUB
+    je .no_patch_main
+
     ; Patch call main in _start (at file offset 1)
     mov rax, [xstate + X86State.fn_main_off]
     sub rax, 5               ; rel32 = target - (1 + 4)
@@ -214,6 +219,7 @@ x86_emit_program:
     mov rdx, rax
     call patch_dword
 
+.no_patch_main:
     pop r14
     pop r13
     pop r12
@@ -255,6 +261,9 @@ x86_emit_fn:
     mov rax, [r13 + 16]      ; len
     mov [xstate + X86State.fn_main_off], rax
 .not_main:
+
+    cmp qword [r12 + ASTNode.extra], 1
+    je .naked_fn_body
 
     ; Prologue:
     ; push rbp (55)
@@ -371,7 +380,7 @@ x86_emit_fn:
     mov rsi, [rbx + ASTNode.val_len]
     mov rdx, rcx
     call add_symbol
-    add qword [xstate + X86State.stack_offset], 8
+    add qword [xstate + X86State.stack_offset], 16
 
     mov r15, rcx
     mov rdi, r13
@@ -410,6 +419,22 @@ x86_emit_fn:
     mov sil, al
     call emit_byte
 
+    ; Store tag 1 for parameter: mov qword [rbp - (r15 + 8)], 1
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, r15
+    add rax, 8
+    neg rax
+    mov esi, eax
+    call emit_dword
+    mov esi, 1
+    call emit_dword
+
     inc r10
 
 .param_next:
@@ -444,6 +469,18 @@ x86_emit_fn:
     ; ret (C3)
     mov sil, 0xC3
     call emit_byte
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.naked_fn_body:
+    mov rdi, [r12 + ASTNode.child2]
+    call x86_emit_stmt
 
     pop r15
     pop r14
@@ -1542,19 +1579,19 @@ x86_emit_expr:
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
     je .skip_type_check
 
-    ; Check if left tag (r8) == 3 or right tag (rdx) == 3
+    ; Check if left tag (r8) != 1 or right tag (rdx) != 1
     mov sil, 0x49
     call emit_byte
     mov sil, 0x83
     call emit_byte
     mov sil, 0xF8
     call emit_byte
-    mov sil, 0x03
-    call emit_byte            ; cmp r8, 3
-    mov sil, 0x74
+    mov sil, 0x01
+    call emit_byte            ; cmp r8, 1
+    mov sil, 0x75
     call emit_byte
-    mov sil, 0x06
-    call emit_byte            ; je +6 (trap)
+    mov sil, 0x0F
+    call emit_byte            ; jne +15 (trap)
 
     mov sil, 0x48
     call emit_byte
@@ -1562,12 +1599,12 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0xFA
     call emit_byte
-    mov sil, 0x03
-    call emit_byte            ; cmp rdx, 3
-    mov sil, 0x75
+    mov sil, 0x01
+    call emit_byte            ; cmp rdx, 1
+    mov sil, 0x74
     call emit_byte
     mov sil, 0x05
-    call emit_byte            ; jne +5 (skip)
+    call emit_byte            ; je +5 (skip)
 
     ; Trigger type_mismatch_trap
     mov sil, 0xE8
@@ -1583,44 +1620,44 @@ x86_emit_expr:
     ; Register contract for binary ops:
     ; LHS value is in rcx, RHS value is in rax.
     ; Result must be in rax, tag in rdx (1 = INT).
-    mov rbx, [r12 + ASTNode.val]
-    mov cl, [rbx]
-    mov ch, [rbx + 1]
+    mov r11, [r12 + ASTNode.val]
+    mov r8b, [r11]
+    mov r9b, [r11 + 1]
 
-    cmp cl, '&'
+    cmp r8b, '&'
     je .op_band
-    cmp cl, '|'
+    cmp r8b, '|'
     je .op_bor
-    cmp cl, '^'
+    cmp r8b, '^'
     je .op_bxor
-    cmp cl, '<'
+    cmp r8b, '<'
     je .chk_shl
-    cmp cl, '>'
+    cmp r8b, '>'
     je .chk_shr
 
-    cmp cl, '+'
+    cmp r8b, '+'
     je .op_add
-    cmp cl, '-'
+    cmp r8b, '-'
     je .op_sub
-    cmp cl, '*'
+    cmp r8b, '*'
     je .op_mul
-    cmp cl, '/'
+    cmp r8b, '/'
     je .op_div
-    cmp cl, '%'
+    cmp r8b, '%'
     je .op_mod
-    cmp cl, '='
+    cmp r8b, '='
     je .op_eq
-    cmp cl, '!'
+    cmp r8b, '!'
     je .op_ne
     jmp .done
 
 .chk_shl:
-    cmp ch, '<'
+    cmp r9b, '<'
     je .op_shl
     jmp .op_lt
 
 .chk_shr:
-    cmp ch, '>'
+    cmp r9b, '>'
     je .op_shr
     jmp .op_gt
 
@@ -2256,6 +2293,31 @@ x86_emit_expr:
     jmp .do_addr
 
 .op_bnot:
+    ; Check if tag rdx != 1
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte            ; cmp rdx, 1
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; je +5 (skip)
+
+    ; Trigger type_mismatch_trap
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
     ; not rax (48 F7 D0)
     mov rdi, r13
     mov sil, 0x48

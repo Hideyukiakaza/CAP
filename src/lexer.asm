@@ -32,6 +32,7 @@ kw_free:   db "free", 0
 kw_asm:    db "asm", 0
 kw_import: db "import", 0
 kw_range:  db "range", 0
+kw_naked:  db "naked", 0
 
 section .bss
 global lexer_tokens, lexer_token_count, lexer_token_idx
@@ -1096,6 +1097,7 @@ lookup_keyword:
     CHECK_KW kw_asm, KW_ASM
     CHECK_KW kw_import, KW_IMPORT
     CHECK_KW kw_range, KW_RANGE
+    CHECK_KW kw_naked, KW_NAKED
 
     xor rax, rax
     pop r13

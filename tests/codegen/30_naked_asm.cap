@@ -1,0 +1,7 @@
+naked fn f():
+    asm:
+        ret
+
+fn main():
+    f()
+    return 42

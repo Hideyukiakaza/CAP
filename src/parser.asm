@@ -116,6 +116,8 @@ parse_statement:
     je .p_const
     cmp rdx, KW_RAW
     je .p_raw_var
+    cmp rdx, KW_NAKED
+    je .p_naked
     cmp rdx, KW_FN
     je .p_fn
     cmp rdx, KW_STRUCT
@@ -148,6 +150,31 @@ parse_statement:
 
 .p_elif_else_top:
     xor rax, rax
+    pop r12
+    pop rbx
+    ret
+
+.p_naked:
+    call lexer_next_token
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_KEYWORD
+    jne .p_naked_not_fn
+
+    mov rsi, [rax + Token.val]
+    mov rdx, [rax + Token.len]
+    call lookup_keyword
+    cmp rax, KW_FN
+    jne .p_naked_not_fn
+
+    call parse_fn_decl_stmt
+    mov qword [rax + ASTNode.extra], 1
+    pop r12
+    pop rbx
+    ret
+
+.p_naked_not_fn:
+    call lexer_rewind
+    call parse_var_assign_or_expr_stmt
     pop r12
     pop rbx
     ret

@@ -33,6 +33,11 @@ err_type_no_such_field_3: db "'", 10, 0
 err_freestanding_prim_1: db "'", 0
 err_freestanding_prim_2: db "' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
 
+err_naked_return: db "Error: return not allowed in naked function", 10, 0
+err_naked_var:    db "Error: variable declaration not allowed in naked function", 10, 0
+err_naked_alloc:  db "Error: alloc not allowed in naked function", 10, 0
+err_naked_defer:  db "Error: defer not allowed in naked function", 10, 0
+
 s_builtin_print:    db "print", 0
 s_builtin_input:    db "input", 0
 s_builtin_alloc:    db "alloc", 0
@@ -300,6 +305,7 @@ fn_count: resq 1
 local_sym_buf: resb 8192
 local_sym_count: resq 1
 cg_target_arch: resq 1
+in_naked_fn: resq 1
 
 section .text
 global semantic_check_program
@@ -352,6 +358,9 @@ semantic_check_fn:
     mov r12, rdi             ; ast_root
     mov r13, rsi             ; fn_decl node
 
+    mov rax, [r13 + ASTNode.extra]
+    mov [in_naked_fn], rax
+
     mov qword [local_sym_count], 0
 
     mov rbx, [r13 + ASTNode.child1]
@@ -373,6 +382,8 @@ semantic_check_fn:
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child2]
     call semantic_check_stmts
+
+    mov qword [in_naked_fn], 0
 
     pop r15
     pop r14
@@ -519,6 +530,14 @@ semantic_check_stmt:
     jmp .stmt_done
 
 .s_assign:
+    cmp qword [in_naked_fn], 1
+    jne .do_assign_chk
+    mov rsi, err_naked_var
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.do_assign_chk:
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child1]
     call semantic_check_expr
@@ -549,6 +568,14 @@ semantic_check_stmt:
     jmp .stmt_done
 
 .s_field_assign:
+    cmp qword [in_naked_fn], 1
+    jne .do_fassign_chk
+    mov rsi, err_naked_var
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.do_fassign_chk:
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child1]
     call semantic_check_expr
@@ -619,12 +646,30 @@ semantic_check_stmt:
     jmp .stmt_done
 
 .s_defer:
+    cmp qword [in_naked_fn], 1
+    jne .do_defer_chk
+    mov rsi, err_naked_defer
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.do_defer_chk:
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child1]
     call semantic_check_stmt
     jmp .stmt_done
 
 .s_return:
+    cmp qword [in_naked_fn], 1
+    jne .do_ret_chk
+    cmp qword [r13 + ASTNode.child1], 0
+    je .do_ret_chk
+    mov rsi, err_naked_return
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.do_ret_chk:
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child1]
     call semantic_check_expr
@@ -889,6 +934,14 @@ semantic_check_expr:
     jmp .expr_done
 
 .e_alloc:
+    cmp qword [in_naked_fn], 1
+    jne .do_alloc_chk
+    mov rsi, err_naked_alloc
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.do_alloc_chk:
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child1]
     call semantic_check_expr
