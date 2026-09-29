@@ -3098,6 +3098,7 @@ s_mne_nop:    db "nop", 0
 s_mne_ret:    db "ret", 0
 s_mne_syscall:db "syscall", 0
 s_mne_jmp:    db "jmp", 0
+s_mne_stosq:  db "stosq", 0
 
 align 8
 reg_table:
@@ -3277,6 +3278,7 @@ asm_table:
     dq s_mne_ret, 3,  M_NONE, M_NONE,  0x00, 0x00, 0xC3, NO_MODRM,     0
     dq s_mne_syscall, 7, M_NONE, M_NONE, 0x0F, 0x05, 0x00, NO_MODRM,    0
     dq s_mne_jmp, 3,  M_REG64, M_NONE, 0x00, 0x00, 0xFF, 4,            F_REX_W
+    dq s_mne_stosq, 5, M_NONE, M_NONE, 0xF3, 0x00, 0xAB, NO_MODRM,     F_REX_W
     dq 0, 0, 0, 0, 0, 0
 
 section .text
@@ -4084,13 +4086,6 @@ encode_asm_entry:
     or rbx, 2
 
 .emit_pfx:
-    test rbx, rbx
-    jz .do_pfx1_e
-    mov rdi, r12
-    mov sil, bl
-    or sil, 0x40
-    call emit_byte
-
 .do_pfx1_e:
     mov rax, [r13 + AsmTableEntry.pfx1]
     test rax, rax
@@ -4102,9 +4097,17 @@ encode_asm_entry:
 .do_pfx2_e:
     mov rax, [r13 + AsmTableEntry.pfx2]
     test rax, rax
-    jz .do_opcode_e
+    jz .do_rex_e
     mov rdi, r12
     mov sil, al
+    call emit_byte
+
+.do_rex_e:
+    test rbx, rbx
+    jz .do_opcode_e
+    mov rdi, r12
+    mov sil, bl
+    or sil, 0x40
     call emit_byte
 
 .do_opcode_e:
