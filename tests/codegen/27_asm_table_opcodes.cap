@@ -1,0 +1,8 @@
+fn main():
+    asm:
+        mov ds, bx
+        div ebx
+        mov rax, [rbx + 8]
+        lidt [rax]
+        sub rax, 42
+    return 0

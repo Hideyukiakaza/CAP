@@ -42,6 +42,12 @@ $stderr_x86
 EOF
 )"
     fi
+
+    local obj_hex_27=""
+    if [ "$base" = "27_asm_table_opcodes" ] && [ $x86_compile_status -eq 0 ]; then
+        obj_hex_27="$(objdump -D -b binary -m i386:x86-64 "$bin_x86" 2>/dev/null)"
+    fi
+
     rm -f "$bin_x86" /tmp/cap_test_stderr_x86
 
     # --- ARM64 Target ---
@@ -95,7 +101,21 @@ EOF
     fi
 
     # Check x86-64
-    if [ ! -f "$golden_x86" ]; then
+    if [ "$base" = "27_asm_table_opcodes" ]; then
+        local enc_err=0
+        for pattern in "8e db" "f7 f3" "48 8b 43 08" "0f 01 18" "48 81 e8 2a 00 00 00"; do
+            if ! echo "$obj_hex_27" | grep -q "$pattern"; then
+                echo "FAIL     $base (x86-64: missing encoding '$pattern')"
+                enc_err=1
+            fi
+        done
+        if [ $enc_err -eq 0 ]; then
+            echo "PASS     $base (x86-64 encodings verified)"
+            pass=$((pass+1))
+        else
+            fail=$((fail+1))
+        fi
+    elif [ ! -f "$golden_x86" ]; then
         echo "NO GOLD  $base (x86-64)"
         fail=$((fail+1))
     else
