@@ -59,15 +59,20 @@ x86_emit_program:
     push rbx
     push r12
     push r13
+    push r14
 
     mov r12, rdi             ; ast_root
     mov r13, rsi             ; code_buf
+    mov r14, rdx             ; target_mode
 
     mov [xstate + X86State.code_buf], r13
     mov [xstate + X86State.ast_root], r12
     call fn_sym_init
 
-    ; 1. Emit _start sequence at offset 0
+    cmp r14, TARGET_FREESTANDING
+    je .emit_freestanding_start
+
+    ; --- HOSTED _start ---
     ; call main (E8 <rel32>) - place-holder rel32 = 0
     mov rdi, r13
     mov sil, 0xE8
@@ -102,9 +107,6 @@ x86_emit_program:
     call emit_byte
 
     ; 2. Emit Runtime Stubs
-    ; NOTE: Emission order matches runtime_stubs.asm layout.
-    ; Inter-stub call from _stub_x86_input to _stub_x86_alloc is dynamically
-    ; back-patched below to prevent stub emission order dependencies.
     mov rax, [r13 + 16]      ; current len
     mov [xstate + X86State.print_int_off], rax
     mov rdi, r13
@@ -146,8 +148,6 @@ x86_emit_program:
     call emit_x86_format_int
 
     ; Dynamically patch inter-stub call in _stub_x86_input calling _stub_x86_alloc.
-    ; Offset +0x34 in _stub_x86_input is 'call rel32' (E8 <rel32>).
-    ; rel32 = alloc_off - (input_off + 0x34 + 5)
     mov rax, [xstate + X86State.alloc_off]
     mov rcx, [xstate + X86State.input_off]
     add rcx, 0x39            ; input_off + 0x34 + 5
@@ -157,7 +157,36 @@ x86_emit_program:
     add rsi, 0x35            ; patch offset
     mov rdx, rax             ; rel32
     call patch_dword
+    jmp .emit_functions
 
+.emit_freestanding_start:
+    ; --- FREESTANDING _start ---
+    ; call main (E8 <rel32>)
+    mov rdi, r13
+    mov sil, 0xE8
+    call emit_byte
+    mov rdi, r13
+    xor rsi, rsi
+    call emit_dword          ; offset 1 is rel32 for main
+
+    ; cli (FA)
+    mov rdi, r13
+    mov sil, 0xFA
+    call emit_byte
+
+    ; hlt (F4)
+    mov rdi, r13
+    mov sil, 0xF4
+    call emit_byte
+
+    ; jmp $-3 (EB FD)
+    mov rdi, r13
+    mov sil, 0xEB
+    call emit_byte
+    mov sil, 0xFD
+    call emit_byte
+
+.emit_functions:
     ; 3. Emit All Functions in AST
     mov rbx, [r12 + ASTNode.child1]
 .fn_loop:
@@ -183,6 +212,7 @@ x86_emit_program:
     mov rdx, rax
     call patch_dword
 
+    pop r14
     pop r13
     pop r12
     pop rbx
@@ -2781,30 +2811,40 @@ asm_table:
     dq s_mne_add, 3, M_REG64, M_RM64,   0x00, 0x00, 0x03, REG_FROM_OP1,  F_REX_W
     dq s_mne_add, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x01, REG_FROM_OP2,  0
     dq s_mne_add, 3, M_REG32, M_RM32,   0x00, 0x00, 0x03, REG_FROM_OP1,  0
+    dq s_mne_add, 3, M_RM64,  M_IMM,    0x00, 0x00, 0x81, 0,             F_REX_W | F_IMM32
+    dq s_mne_add, 3, M_RM32,  M_IMM,    0x00, 0x00, 0x81, 0,             F_IMM32
 
     ; sub
     dq s_mne_sub, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x29, REG_FROM_OP2,  F_REX_W
     dq s_mne_sub, 3, M_REG64, M_RM64,   0x00, 0x00, 0x2B, REG_FROM_OP1,  F_REX_W
     dq s_mne_sub, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x29, REG_FROM_OP2,  0
     dq s_mne_sub, 3, M_REG32, M_RM32,   0x00, 0x00, 0x2B, REG_FROM_OP1,  0
+    dq s_mne_sub, 3, M_RM64,  M_IMM,    0x00, 0x00, 0x81, 5,             F_REX_W | F_IMM32
+    dq s_mne_sub, 3, M_RM32,  M_IMM,    0x00, 0x00, 0x81, 5,             F_IMM32
 
     ; xor
     dq s_mne_xor, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x31, REG_FROM_OP2,  F_REX_W
     dq s_mne_xor, 3, M_REG64, M_RM64,   0x00, 0x00, 0x33, REG_FROM_OP1,  F_REX_W
     dq s_mne_xor, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x31, REG_FROM_OP2,  0
     dq s_mne_xor, 3, M_REG32, M_RM32,   0x00, 0x00, 0x33, REG_FROM_OP1,  0
+    dq s_mne_xor, 3, M_RM64,  M_IMM,    0x00, 0x00, 0x81, 6,             F_REX_W | F_IMM32
+    dq s_mne_xor, 3, M_RM32,  M_IMM,    0x00, 0x00, 0x81, 6,             F_IMM32
 
     ; and
     dq s_mne_and, 3, M_RM64,  M_REG64,  0x00, 0x00, 0x21, REG_FROM_OP2,  F_REX_W
     dq s_mne_and, 3, M_REG64, M_RM64,   0x00, 0x00, 0x23, REG_FROM_OP1,  F_REX_W
     dq s_mne_and, 3, M_RM32,  M_REG32,  0x00, 0x00, 0x21, REG_FROM_OP2,  0
     dq s_mne_and, 3, M_REG32, M_RM32,   0x00, 0x00, 0x23, REG_FROM_OP1,  0
+    dq s_mne_and, 3, M_RM64,  M_IMM,    0x00, 0x00, 0x81, 4,             F_REX_W | F_IMM32
+    dq s_mne_and, 3, M_RM32,  M_IMM,    0x00, 0x00, 0x81, 4,             F_IMM32
 
     ; or
     dq s_mne_or, 2,  M_RM64,  M_REG64,  0x00, 0x00, 0x09, REG_FROM_OP2,  F_REX_W
     dq s_mne_or, 2,  M_REG64, M_RM64,   0x00, 0x00, 0x0B, REG_FROM_OP1,  F_REX_W
     dq s_mne_or, 2,  M_RM32,  M_REG32,  0x00, 0x00, 0x09, REG_FROM_OP2,  0
     dq s_mne_or, 2,  M_REG32, M_RM32,   0x00, 0x00, 0x0B, REG_FROM_OP1,  0
+    dq s_mne_or, 2,  M_RM64,  M_IMM,    0x00, 0x00, 0x81, 1,             F_REX_W | F_IMM32
+    dq s_mne_or, 2,  M_RM32,  M_IMM,    0x00, 0x00, 0x81, 1,             F_IMM32
 
     ; div / idiv
     dq s_mne_div, 3,  M_RM32, M_NONE,   0x00, 0x00, 0xF7, 6,             0
@@ -2845,6 +2885,11 @@ section .text
 
 x86_encode_asm_line:
     push rbp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
     mov rbp, rsp
     sub rsp, 256
 
@@ -3066,6 +3111,11 @@ x86_encode_asm_line:
 
 .done_line_td:
     mov rsp, rbp
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
     pop rbp
     ret
 
@@ -3265,11 +3315,32 @@ parse_mem_expr:
     test r13, r13
     jz .pme_done
 
+.pme_trim_space:
+    test r13, r13
+    jz .pme_done
+    mov al, [r12]
+    cmp al, ' '
+    je .pme_inc_space
+    cmp al, 9
+    je .pme_inc_space
+    jmp .pme_sign_check
+.pme_inc_space:
+    inc r12
+    dec r13
+    jmp .pme_trim_space
+
+.pme_sign_check:
     xor r15, r15
     mov rbx, 1
     cmp byte [r12], '-'
-    jne .pme_scan_term
+    jne .pme_chk_plus
     mov rbx, -1
+    inc r12
+    dec r13
+    jmp .pme_scan_term
+.pme_chk_plus:
+    cmp byte [r12], '+'
+    jne .pme_scan_term
     inc r12
     dec r13
 
@@ -3290,13 +3361,48 @@ parse_mem_expr:
 
     mov rdi, r12
     mov rsi, r15
+
+.trim_t_lead:
+    test rsi, rsi
+    jz .pme_next_term
+    mov al, [rdi]
+    cmp al, ' '
+    je .inc_t_lead
+    cmp al, 9
+    je .inc_t_lead
+    jmp .trim_t_trail
+.inc_t_lead:
+    inc rdi
+    dec rsi
+    jmp .trim_t_lead
+
+.trim_t_trail:
+    test rsi, rsi
+    jz .pme_next_term
+    mov al, [rdi + rsi - 1]
+    cmp al, ' '
+    je .dec_t_trail
+    cmp al, 9
+    je .dec_t_trail
+    jmp .t_trimmed
+.dec_t_trail:
+    dec rsi
+    jmp .trim_t_trail
+
+.t_trimmed:
+    push rdi
+    push rsi
     call check_term_has_star
+    pop rsi
+    pop rdi
     test rax, rax
     jnz .pme_star_term
 
-    mov rdi, r12
-    mov rsi, r15
+    push rdi
+    push rsi
     call lookup_register
+    pop rsi
+    pop rdi
     cmp rax, -1
     je .pme_disp_term
 
@@ -3312,17 +3418,39 @@ parse_mem_expr:
 
 .pme_star_term:
     mov r8, rax
-    mov rdi, r12
+    push rdi
+    push rsi
+    push r8
     mov rsi, r8
     call lookup_register
+    pop r8
+    pop rsi
+    pop rdi
     cmp rax, -1
     je .pme_next_term
     mov [r14 + AsmOp.mem_idx], rdx
 
-    lea rdi, [r12 + r8 + 1]
-    mov rcx, r15
+    lea rbx, [rdi + r8 + 1]
+    mov rcx, rsi
     sub rcx, r8
     dec rcx
+
+.trim_s_lead:
+    test rcx, rcx
+    jz .pme_next_term
+    mov al, [rbx]
+    cmp al, ' '
+    je .inc_s_lead
+    cmp al, 9
+    je .inc_s_lead
+    jmp .s_trimmed
+.inc_s_lead:
+    inc rbx
+    dec rcx
+    jmp .trim_s_lead
+
+.s_trimmed:
+    mov rdi, rbx
     xor rsi, rsi
     call parse_int_literal
     cmp rax, 1
@@ -3339,8 +3467,7 @@ parse_mem_expr:
     jmp .pme_next_term
 
 .pme_disp_term:
-    mov rdi, r12
-    mov rcx, r15
+    mov rcx, rsi
     xor rsi, rsi
     call parse_int_literal
     cmp rbx, -1
@@ -3352,15 +3479,6 @@ parse_mem_expr:
 .pme_next_term:
     add r12, r15
     sub r13, r15
-    test r13, r13
-    jz .pme_done
-    mov al, [r12]
-    cmp al, '+'
-    je .pme_skip_sign
-    cmp al, '-'
-    je .pme_skip_sign
-    jmp .pme_loop
-.pme_skip_sign:
     jmp .pme_loop
 
 .pme_done:
@@ -3374,11 +3492,6 @@ parse_mem_expr:
 
 .invalid_ops_exit:
     mov rsi, err_asm_invalid_ops_1
-    call print_err
-    mov rsi, [rbp - 16]
-    mov rdx, [rbp - 24]
-    call print_err_bytes
-    mov rsi, err_asm_invalid_ops_2
     call print_err
     mov rdi, 1
     call sys_exit

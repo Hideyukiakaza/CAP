@@ -30,6 +30,9 @@ err_type_no_such_field_1: db "TypeError: struct '", 0
 err_type_no_such_field_2: db "' has no field '", 0
 err_type_no_such_field_3: db "'", 10, 0
 
+err_freestanding_prim_1: db "'", 0
+err_freestanding_prim_2: db "' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
+
 s_builtin_print:    db "print", 0
 s_builtin_input:    db "input", 0
 s_builtin_alloc:    db "alloc", 0
@@ -145,6 +148,7 @@ compile_program:
     mov r12, rdi             ; ast_root
     mov r13, rsi             ; target_arch
     mov r14, rdx             ; output_filename
+    mov [cg_target_arch], r13
 
     ; Check if main function exists in AST
     mov rbx, [r12 + ASTNode.child1]
@@ -184,6 +188,7 @@ compile_program:
     je .do_arm
     mov rdi, r12
     mov rsi, rbx
+    mov rdx, r13
     call x86_emit_program
     jmp .do_write
 
@@ -285,7 +290,7 @@ process_struct_decls:
 
 ; Semantic Check & Symbol Tables
 section .bss
-global sym_buf, fn_buf
+global sym_buf, fn_buf, cg_target_arch
 sym_buf: resb 8192
 sym_count: resq 1
 
@@ -294,6 +299,7 @@ fn_count: resq 1
 
 local_sym_buf: resb 8192
 local_sym_count: resq 1
+cg_target_arch: resq 1
 
 section .text
 global semantic_check_program
@@ -702,6 +708,26 @@ semantic_check_expr:
     call sys_exit
 
 .e_call:
+    cmp qword [cg_target_arch], TARGET_FREESTANDING
+    jne .chk_builtin
+
+    mov rdi, [r13 + ASTNode.val]
+    mov rdx, [r13 + ASTNode.val_len]
+    call is_freestanding_restricted
+    test rax, rax
+    jz .chk_builtin
+
+    mov rsi, err_freestanding_prim_1
+    call print_err
+    mov rsi, [r13 + ASTNode.val]
+    mov rdx, [r13 + ASTNode.val_len]
+    call print_err_bytes
+    mov rsi, err_freestanding_prim_2
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.chk_builtin:
     mov rdi, [r13 + ASTNode.val]
     mov rdx, [r13 + ASTNode.val_len]
     call is_builtin_name
@@ -882,6 +908,38 @@ semantic_check_expr:
     pop r12
     pop rbx
     pop rbp
+    ret
+
+is_freestanding_restricted:
+    push rbx
+    push r12
+    mov rbx, rdi
+    mov r12, rdx
+
+    mov rsi, s_builtin_print
+    call check_match
+    test rax, rax
+    jnz .r_yes
+
+    mov rsi, s_builtin_input
+    call check_match
+    test rax, rax
+    jnz .r_yes
+
+    mov rsi, s_builtin_alloc
+    call check_match
+    test rax, rax
+    jnz .r_yes
+
+    xor rax, rax
+    pop r12
+    pop rbx
+    ret
+
+.r_yes:
+    mov rax, 1
+    pop r12
+    pop rbx
     ret
 
 is_builtin_name:
