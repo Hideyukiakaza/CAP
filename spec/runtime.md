@@ -39,7 +39,7 @@ When a runtime trap fires, CAP executables write a diagnostic error message to `
   - Gate Packing:
     - `lo = (handler & 0xFFFF) | (selector << 16) | (0x8E00 << 32) | (((handler >> 16) & 0xFFFF) << 48)`
     - `hi = (handler >> 32) & 0xFFFFFFFF`
-  - IDT Exception Printer Address: `0x100C37` (outputs `EXCEPTION: vector=<dec> err=0x<16 hex> rip=0x<16 hex>\n` to serial port `0x3F8`).
+  - IDT Exception Printer Address: `de_handler` (`0x100CCF`) trampolines to stub common exception printer at `0x100BC8` (outputs `EXCEPTION: vector=<dec> err=0x<16 hex> rip=0x<16 hex>\n` to serial port `0x3F8`).
 
 ## Freestanding Blob Paging
 
@@ -60,7 +60,10 @@ When a runtime trap fires, CAP executables write a diagnostic error message to `
   - `PD` at `0x22000`: 2MB identity-mapped leaves using `P | RW | PS` (`0x83` flags):
     - `PD[0] = 0x00000083` (linear `0x00000000` to `0x00200000`)
     - `PD[1] = 0x00200083` (linear `0x00200000` to `0x00400000`)
-- **Linear Range Present:** Mapped contiguous 0-4MB identity range (`0x00000000` to `0x00400000`), covering low page tables (`0x20000`), boot stub and user code (`0x100000`), IDTR/IDT (`0x100400`/`0x100500`), and stack (`0x200000`).
+
+- **Extended Page Table Mapping (`14`/`15`/`16`):**
+  - `PD[2] = 0x00400083` (linear `0x00400000` to `0x00600000`, 4-6MB).
+- **Linear Range Present:** Mapped contiguous 0-6MB identity range (`0x00000000` to `0x00600000`), covering low page tables (`0x20000`), boot stub and user code (`0x100000`), IDTR/IDT (`0x100400`/`0x100500`), stack (`0x200000`), and extended RAM (`0x400000`).
 
 ## Bitwise Operators
 

@@ -1,0 +1,80 @@
+/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100E7C
+/*/ Gate packing formula: see spec/runtime.md
+/*/ GDT descriptors: Code 0x08 = 0x00AF9A000000FFFF, Data 0x10 = 0x00CF92000000FFFF
+naked fn de_handler():
+    asm:
+        push 0
+        push 0
+        mov rax, 0x100BC8
+        jmp rax
+
+fn main():
+    asm:
+        mov rdi, 0x100500
+        mov rax, 0x00108E0000080CCF
+        mov [rdi], rax
+        mov rax, 0
+        mov [rdi + 8], rax
+
+        mov rax, 0x100400
+        mov rbx, 0x01FF
+        mov [rax], rbx
+        mov rbx, 0x100500
+        mov [rax + 2], rbx
+        lidt [rax]
+
+        mov rdi, 0x20000
+        mov rax, 0
+        mov rcx, 0x600
+        stosq
+
+        mov rdi, 0x20000
+        mov rax, 0x21003
+        mov [rdi], rax
+
+        mov rdi, 0x21000
+        mov rax, 0x22003
+        mov [rdi], rax
+
+        mov rdi, 0x22000
+        mov rax, 0x00000083
+        mov [rdi], rax
+
+        mov rdi, 0x22008
+        mov rax, 0x00200083
+        mov [rdi], rax
+
+        mov rdi, 0x22010
+        mov rax, 0x00400083
+        mov [rdi], rax
+
+        mov rax, 0x20000
+        mov cr3, rax
+
+        mov rdi, 0x100700
+        mov rax, 0
+        mov [rdi], rax
+        mov rax, 0x00AF9A000000FFFF
+        mov [rdi + 8], rax
+        mov rax, 0x00CF92000000FFFF
+        mov [rdi + 16], rax
+
+        mov rax, 0x1006F6
+        mov rbx, 0x0017
+        mov [rax], rbx
+        mov rbx, 0x100700
+        mov [rax + 2], rbx
+        lgdt [rax]
+
+        mov ax, 0x10
+        mov ds, ax
+        mov es, ax
+        mov ss, ax
+
+        push 0x08
+        mov rax, 0x100E4D
+        push rax
+        retfq
+
+    x = 1 / 0
+    return x
