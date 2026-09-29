@@ -2369,6 +2369,43 @@ x86_emit_expr:
     mov rbx, [r12 + ASTNode.child1]
     mov rdi, [rbx + ASTNode.val]
     mov rsi, [rbx + ASTNode.val_len]
+    call find_fn_symbol
+    cmp rax, -1
+    je .addr_var
+
+    ; Function symbol found! rax = code offset fn_off
+    cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .addr_fn_fs
+    add rax, 0x400078         ; hosted base VA
+    jmp .addr_fn_emit
+.addr_fn_fs:
+    add rax, 0x100CC6         ; freestanding base VA (0x100000 + 3270)
+.addr_fn_emit:
+    ; Emit mov rax, imm64 (48 B8 <8-byte imm64>)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xB8
+    call emit_byte
+    mov rsi, rax              ; imm64 VA
+    call emit_qword
+
+    ; Set tag rdx = 1 (INT)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.addr_var:
+    mov rbx, [r12 + ASTNode.child1]
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
     call find_symbol_offset
     mov rdi, r13
     mov sil, 0x48
@@ -3060,6 +3097,7 @@ s_mne_hlt:    db "hlt", 0
 s_mne_nop:    db "nop", 0
 s_mne_ret:    db "ret", 0
 s_mne_syscall:db "syscall", 0
+s_mne_jmp:    db "jmp", 0
 
 align 8
 reg_table:
@@ -3212,6 +3250,7 @@ asm_table:
 
     ; push / pop
     dq s_mne_push, 4, M_REG64, M_NONE,  0x00, 0x00, 0x50, NO_MODRM,     F_OPCODE_REG_ADD
+    dq s_mne_push, 4, M_IMM,   M_NONE,  0x00, 0x00, 0x6A, NO_MODRM,     F_IMM8
     dq s_mne_pop, 3,  M_REG64, M_NONE,  0x00, 0x00, 0x58, NO_MODRM,     F_OPCODE_REG_ADD
 
     ; in / out
@@ -3237,6 +3276,7 @@ asm_table:
     dq s_mne_nop, 3,  M_NONE, M_NONE,  0x00, 0x00, 0x90, NO_MODRM,     0
     dq s_mne_ret, 3,  M_NONE, M_NONE,  0x00, 0x00, 0xC3, NO_MODRM,     0
     dq s_mne_syscall, 7, M_NONE, M_NONE, 0x0F, 0x05, 0x00, NO_MODRM,    0
+    dq s_mne_jmp, 3,  M_REG64, M_NONE, 0x00, 0x00, 0xFF, 4,            F_REX_W
     dq 0, 0, 0, 0, 0, 0
 
 section .text

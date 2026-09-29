@@ -1,0 +1,33 @@
+/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100F4A
+/*/ lgdt is omitted here because the freestanding boot stub GDT is already active with selectors 0x08 (code) and 0x10 (data).
+naked fn de_handler():
+    asm:
+        push 0
+        push 0
+        mov rax, 0x100BC8
+        jmp rax
+
+fn main():
+    handler = &de_handler
+    selector = 0x08
+    off0 = handler & 0xFFFF
+    off1 = (handler >> 16) & 0xFFFF
+    lo = off0 | (selector << 16) | (0x8E00 << 32) | (off1 << 48)
+    hi = 0
+
+    asm:
+        mov rdi, 0x100500
+        mov rax, [rbp - 72]
+        mov [rdi], rax
+        mov rax, [rbp - 88]
+        mov [rdi + 8], rax
+
+        mov rax, 0x100400
+        mov rbx, 0x01FF
+        mov [rax], rbx
+        mov rbx, 0x100500
+        mov [rax + 2], rbx
+        lidt [rax]
+
+    x = 1 / 0
+    return x

@@ -742,6 +742,13 @@ semantic_check_expr:
     test rax, rax
     jnz .expr_done
 
+    mov rdi, r12
+    mov rsi, [r13 + ASTNode.val]
+    mov rdx, [r13 + ASTNode.val_len]
+    call find_fn_decl_in_ast
+    test rax, rax
+    jnz .expr_done
+
     mov rsi, err_name_undef_var_1
     call print_err
     mov rsi, [r13 + ASTNode.val]
@@ -1081,10 +1088,12 @@ find_fn_decl_in_ast:
     cmp rdx, r13
     jne .f_ast_next
 
+    push r12
     mov rdi, r12
     mov rsi, [rbx + ASTNode.val]
     mov rdx, r13
     call str_ncmp
+    pop r12
     test rax, rax
     jz .f_ast_found
 
@@ -1418,10 +1427,12 @@ find_fn_symbol:
     cmp rdx, r13
     jne .fn_search_loop
 
+    push r12
     mov rdi, r12
     mov rsi, [rax]
     mov rdx, r13
     call str_ncmp
+    pop r12
     test rax, rax
     jnz .fn_search_loop
 
