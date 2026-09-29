@@ -6,6 +6,10 @@ fn main():
         mov rbx, rax
         add rax, rbx
         sub rax, 42
+        mov rax, [rbx + 8]
+        div ebx
+        mov ds, bx
+        lidt [rax]
         xor rcx, rcx
         push rax
         pop rdx
