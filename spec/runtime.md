@@ -43,8 +43,8 @@ When a runtime trap fires, CAP executables write a diagnostic error message to `
 
 ## Freestanding Blob Paging
 
-- **CR3 Value:** `0x1000`
-- **Page Table Structure:**
+- **Boot Stub Initial Paging:**
+  - Initial `CR3` = `0x1000`
   - `PML4` at `0x1000`: `PML4[0] = 0x2003` (`0x2000 | P | RW`, pointing to PDPT at `0x2000`).
   - `PDPT` at `0x2000`: `PDPT[0] = 0x3003` (`0x3000 | P | RW`, pointing to PD at `0x3000`).
   - `PD` at `0x3000`: 8 identity-mapped 2MB leaves using `P | RW | PS` (`0x83` flags):
@@ -52,7 +52,15 @@ When a runtime trap fires, CAP executables write a diagnostic error message to `
     - `PD[1] = 0x00200000 | 0x83` (linear `0x00200000` to `0x00400000`)
     - `PD[2] = 0x00400000 | 0x83` (linear `0x00400000` to `0x00600000`)
     - ... up to `PD[7]` mapping physical/linear addresses `0x00000000` through `0x01000000` (16MB).
-- **Linear Range Present:** Mapped 16MB contiguous identity range (`0x00000000` to `0x01000000`), covering boot stub code (`0x100000`), IDTR/IDT (`0x100400`/`0x100500`), user code (`de_handler`, `main`), stack, and page table allocation regions (`0x200000`+).
+
+- **User Page Table Mapping (`13_cap_cr3.cap`):**
+  - Custom `CR3` = `0x20000`
+  - `PML4` at `0x20000`: `PML4[0] = 0x21003` (`0x21000 | P | RW`, pointing to PDPT at `0x21000`).
+  - `PDPT` at `0x21000`: `PDPT[0] = 0x22003` (`0x22000 | P | RW`, pointing to PD at `0x22000`).
+  - `PD` at `0x22000`: 2MB identity-mapped leaves using `P | RW | PS` (`0x83` flags):
+    - `PD[0] = 0x00000083` (linear `0x00000000` to `0x00200000`)
+    - `PD[1] = 0x00200083` (linear `0x00200000` to `0x00400000`)
+- **Linear Range Present:** Mapped contiguous 0-4MB identity range (`0x00000000` to `0x00400000`), covering low page tables (`0x20000`), boot stub and user code (`0x100000`), IDTR/IDT (`0x100400`/`0x100500`), and stack (`0x200000`).
 
 ## Bitwise Operators
 
