@@ -904,7 +904,7 @@ parse_equality_expr:
 parse_relational_expr:
     push rbx
     push r12
-    call parse_additive_expr
+    call parse_bitwise_or_expr
     mov rbx, rax
 
 .rel_loop:
@@ -912,7 +912,26 @@ parse_relational_expr:
     cmp qword [rax + Token.type], TOKEN_OP
     jne .rel_done
     mov rdx, [rax + Token.val]
+    mov rcx, [rax + Token.len]
+    cmp rcx, 1
+    je .rel_1char
+    cmp rcx, 2
+    je .rel_2char
+    jmp .rel_done
+
+.rel_1char:
     mov cl, [rdx]
+    cmp cl, '<'
+    je .is_rel_op
+    cmp cl, '>'
+    je .is_rel_op
+    jmp .rel_done
+
+.rel_2char:
+    mov cl, [rdx]
+    mov ch, [rdx + 1]
+    cmp ch, '='
+    jne .rel_done
     cmp cl, '<'
     je .is_rel_op
     cmp cl, '>'
@@ -922,7 +941,7 @@ parse_relational_expr:
 .is_rel_op:
     call lexer_next_token
     push rax
-    call parse_additive_expr
+    call parse_bitwise_or_expr
     mov r12, rax
     pop r8
     mov rdi, AST_BIN_OP
@@ -937,6 +956,184 @@ parse_relational_expr:
     jmp .rel_loop
 
 .rel_done:
+    mov rax, rbx
+    pop r12
+    pop rbx
+    ret
+
+parse_bitwise_or_expr:
+    push rbx
+    push r12
+    call parse_bitwise_xor_expr
+    mov rbx, rax
+
+.bor_loop:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_OP
+    jne .bor_done
+    mov rcx, [rax + Token.len]
+    cmp rcx, 1
+    jne .bor_done
+    mov rdx, [rax + Token.val]
+    mov cl, [rdx]
+    cmp cl, '|'
+    jne .bor_done
+
+.is_bor_op:
+    call lexer_next_token
+    push rax
+    call parse_bitwise_xor_expr
+    mov r12, rax
+    pop r8
+    mov rdi, AST_BIN_OP
+    call create_ast_node
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
+    mov [rax + ASTNode.val], rdx
+    mov [rax + ASTNode.val_len], rcx
+    mov [rax + ASTNode.child1], rbx
+    mov [rax + ASTNode.child2], r12
+    mov rbx, rax
+    jmp .bor_loop
+
+.bor_done:
+    mov rax, rbx
+    pop r12
+    pop rbx
+    ret
+
+parse_bitwise_xor_expr:
+    push rbx
+    push r12
+    call parse_bitwise_and_expr
+    mov rbx, rax
+
+.bxor_loop:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_OP
+    jne .bxor_done
+    mov rcx, [rax + Token.len]
+    cmp rcx, 1
+    jne .bxor_done
+    mov rdx, [rax + Token.val]
+    mov cl, [rdx]
+    cmp cl, '^'
+    jne .bxor_done
+
+.is_bxor_op:
+    call lexer_next_token
+    push rax
+    call parse_bitwise_and_expr
+    mov r12, rax
+    pop r8
+    mov rdi, AST_BIN_OP
+    call create_ast_node
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
+    mov [rax + ASTNode.val], rdx
+    mov [rax + ASTNode.val_len], rcx
+    mov [rax + ASTNode.child1], rbx
+    mov [rax + ASTNode.child2], r12
+    mov rbx, rax
+    jmp .bxor_loop
+
+.bxor_done:
+    mov rax, rbx
+    pop r12
+    pop rbx
+    ret
+
+parse_bitwise_and_expr:
+    push rbx
+    push r12
+    call parse_shift_expr
+    mov rbx, rax
+
+.band_loop:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_OP
+    jne .band_done
+    mov rcx, [rax + Token.len]
+    cmp rcx, 1
+    jne .band_done
+    mov rdx, [rax + Token.val]
+    mov cl, [rdx]
+    cmp cl, '&'
+    jne .band_done
+
+.is_band_op:
+    call lexer_next_token
+    push rax
+    call parse_shift_expr
+    mov r12, rax
+    pop r8
+    mov rdi, AST_BIN_OP
+    call create_ast_node
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
+    mov [rax + ASTNode.val], rdx
+    mov [rax + ASTNode.val_len], rcx
+    mov [rax + ASTNode.child1], rbx
+    mov [rax + ASTNode.child2], r12
+    mov rbx, rax
+    jmp .band_loop
+
+.band_done:
+    mov rax, rbx
+    pop r12
+    pop rbx
+    ret
+
+parse_shift_expr:
+    push rbx
+    push r12
+    call parse_additive_expr
+    mov rbx, rax
+
+.sh_loop:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_OP
+    jne .sh_done
+    mov rcx, [rax + Token.len]
+    cmp rcx, 2
+    jne .sh_done
+    mov rdx, [rax + Token.val]
+    mov cl, [rdx]
+    mov ch, [rdx + 1]
+    cmp cl, '<'
+    je .chk_shl
+    cmp cl, '>'
+    je .chk_shr
+    jmp .sh_done
+
+.chk_shl:
+    cmp ch, '<'
+    je .is_sh_op
+    jmp .sh_done
+
+.chk_shr:
+    cmp ch, '>'
+    je .is_sh_op
+    jmp .sh_done
+
+.is_sh_op:
+    call lexer_next_token
+    push rax
+    call parse_additive_expr
+    mov r12, rax
+    pop r8
+    mov rdi, AST_BIN_OP
+    call create_ast_node
+    mov rdx, [r8 + Token.val]
+    mov rcx, [r8 + Token.len]
+    mov [rax + ASTNode.val], rdx
+    mov [rax + ASTNode.val_len], rcx
+    mov [rax + ASTNode.child1], rbx
+    mov [rax + ASTNode.child2], r12
+    mov rbx, rax
+    jmp .sh_loop
+
+.sh_done:
     mov rax, rbx
     pop r12
     pop rbx
@@ -1042,12 +1239,14 @@ parse_unary_expr:
     je .is_un_op
     cmp cl, '&'
     je .is_un_op
+    cmp cl, '~'
+    je .is_un_op
     jmp .not_unary
 
 .is_un_op:
     call lexer_next_token
     mov rbx, rax
-    call parse_primary_expr
+    call parse_unary_expr
     mov r12, rax
     mov rdi, AST_UN_OP
     call create_ast_node

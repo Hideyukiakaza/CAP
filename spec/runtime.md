@@ -18,6 +18,20 @@ When a runtime trap fires, CAP executables write a diagnostic error message to `
 | Signed Integer Overflow (`INT64_MIN / -1`) | `RuntimeError: integer overflow\n` | `101` |
 | Type Mismatch in Arithmetic | `RuntimeError: type mismatch in arithmetic operation\n` | `101` |
 
+## Division Behavior by Mode
+
+| Mode | `/ 0` and `% 0` | `INT64_MIN / -1` |
+|------|-----------------|------------------|
+| Hosted | `RuntimeError: division by zero` + exit 101 | `RuntimeError: integer overflow` + exit 101 |
+| Freestanding | Raw `cqo; idiv rbx` — hardware `#DE` (vector 0 on IDT) | Raw `cqo; idiv rbx` — hardware `#DE` |
+
+## Bitwise Operators
+
+- Bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`) operate on 64-bit two's complement integers.
+- Both operands of bitwise operations must be integers (floats or strings trigger `RuntimeError: type mismatch in arithmetic operation` in hosted mode).
+- Shift counts are masked to 6 bits (`cl & 63` on x86-64, `x1 & 63` on ARM64).
+- `>>` performs arithmetic right shift (sign-extending).
+
 ## Builtin Functions and Type Classification
 
 - `input()` classifies numeric-shaped input into INT (`tag = 1`), FLOAT (`tag = 2`), or fallback STRING (`tag = 3`).

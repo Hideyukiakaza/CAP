@@ -1121,6 +1121,18 @@ arm_emit_expr:
     ; Op
     mov rbx, [r12 + ASTNode.val]
     mov cl, [rbx]
+    mov ch, [rbx + 1]
+
+    cmp cl, '&'
+    je .op_band_arm
+    cmp cl, '|'
+    je .op_bor_arm
+    cmp cl, '^'
+    je .op_bxor_arm
+    cmp cl, '<'
+    je .chk_shl_arm
+    cmp cl, '>'
+    je .chk_shr_arm
 
     cmp cl, '+'
     je .op_add
@@ -1134,10 +1146,51 @@ arm_emit_expr:
     je .op_mod
     cmp cl, '='
     je .op_eq
-    cmp cl, '<'
-    je .op_lt
-    cmp cl, '>'
-    je .op_gt
+    jmp .done
+
+.chk_shl_arm:
+    cmp ch, '<'
+    je .op_shl_arm
+    jmp .op_lt
+
+.chk_shr_arm:
+    cmp ch, '>'
+    je .op_shr_arm
+    jmp .op_gt
+
+.op_band_arm:
+    ; and x0, x2, x0 -> 0x8A000040
+    EMIT_ARM 0x8A000040
+    ; mov x1, #1 -> 0xD2800021
+    EMIT_ARM 0xD2800021
+    jmp .done
+
+.op_bor_arm:
+    ; orr x0, x2, x0 -> 0xAA000040
+    EMIT_ARM 0xAA000040
+    ; mov x1, #1 -> 0xD2800021
+    EMIT_ARM 0xD2800021
+    jmp .done
+
+.op_bxor_arm:
+    ; eor x0, x2, x0 -> 0xCA000040
+    EMIT_ARM 0xCA000040
+    ; mov x1, #1 -> 0xD2800021
+    EMIT_ARM 0xD2800021
+    jmp .done
+
+.op_shl_arm:
+    ; lsl x0, x2, x0 -> 0x9AC02040
+    EMIT_ARM 0x9AC02040
+    ; mov x1, #1 -> 0xD2800021
+    EMIT_ARM 0xD2800021
+    jmp .done
+
+.op_shr_arm:
+    ; asrv x0, x2, x0 -> 0x9AC02840
+    EMIT_ARM 0x9AC02840
+    ; mov x1, #1 -> 0xD2800021
+    EMIT_ARM 0xD2800021
     jmp .done
 
 .op_add:
@@ -1228,6 +1281,8 @@ arm_emit_expr:
 .e_un_op:
     mov rbx, [r12 + ASTNode.val]
     mov cl, [rbx]
+    cmp cl, '~'
+    je .op_bnot_arm
     cmp cl, '-'
     jne .normal_un_op_arm
 
@@ -1258,6 +1313,15 @@ arm_emit_expr:
     mov eax, 0xD2800021
     EMIT_ARM eax
     EMIT_ARM 0xCB0003E0
+    jmp .done
+
+.op_bnot_arm:
+    mov rdi, [r12 + ASTNode.child1]
+    call arm_emit_expr
+    ; mvn x0, x0 -> 0xAA2003E0
+    EMIT_ARM 0xAA2003E0
+    ; mov x1, #1 -> 0xD2800021
+    EMIT_ARM 0xD2800021
     jmp .done
 
 .normal_un_op_arm:

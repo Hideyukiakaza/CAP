@@ -42,6 +42,7 @@ struc X86State
     .loop_start:   resq 1
     .loop_end:     resq 1
     .ast_root:     resq 1
+    .target_mode:  resq 1
 endstruc
 
 section .bss
@@ -67,6 +68,7 @@ x86_emit_program:
 
     mov [xstate + X86State.code_buf], r13
     mov [xstate + X86State.ast_root], r12
+    mov [xstate + X86State.target_mode], r14
     call fn_sym_init
 
     cmp r14, TARGET_FREESTANDING
@@ -1537,6 +1539,9 @@ x86_emit_expr:
     mov sil, 0x59
     call emit_byte           ; pop rcx (left val)
 
+    cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .skip_type_check
+
     ; Check if left tag (r8) == 3 or right tag (rdx) == 3
     mov sil, 0x49
     call emit_byte
@@ -1574,9 +1579,24 @@ x86_emit_expr:
     mov esi, eax
     call emit_dword
 
-    ; Check operator
+.skip_type_check:
+    ; Register contract for binary ops:
+    ; LHS value is in rcx, RHS value is in rax.
+    ; Result must be in rax, tag in rdx (1 = INT).
     mov rbx, [r12 + ASTNode.val]
     mov cl, [rbx]
+    mov ch, [rbx + 1]
+
+    cmp cl, '&'
+    je .op_band
+    cmp cl, '|'
+    je .op_bor
+    cmp cl, '^'
+    je .op_bxor
+    cmp cl, '<'
+    je .chk_shl
+    cmp cl, '>'
+    je .chk_shr
 
     cmp cl, '+'
     je .op_add
@@ -1592,10 +1612,163 @@ x86_emit_expr:
     je .op_eq
     cmp cl, '!'
     je .op_ne
-    cmp cl, '<'
-    je .op_lt
-    cmp cl, '>'
-    je .op_gt
+    jmp .done
+
+.chk_shl:
+    cmp ch, '<'
+    je .op_shl
+    jmp .op_lt
+
+.chk_shr:
+    cmp ch, '>'
+    je .op_shr
+    jmp .op_gt
+
+.op_band:
+    ; and rax, rcx (48 21 C8)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x21
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.op_bor:
+    ; or rax, rcx (48 09 C8)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x09
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.op_bxor:
+    ; xor rax, rcx (48 31 C8)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.op_shl:
+    ; LHS is in rcx, RHS (shift count) is in rax.
+    ; mov rbx, rcx (48 89 CB)
+    ; mov rcx, rax (48 89 C1)
+    ; mov rax, rbx (48 89 D8)
+    ; sal rax, cl  (48 D3 E0)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xCB
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC1
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xD8
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xD3
+    call emit_byte
+    mov sil, 0xE0
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.op_shr:
+    ; LHS is in rcx, RHS (shift count) is in rax.
+    ; mov rbx, rcx (48 89 CB)
+    ; mov rcx, rax (48 89 C1)
+    ; mov rax, rbx (48 89 D8)
+    ; sar rax, cl  (48 D3 F8)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xCB
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC1
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xD8
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xD3
+    call emit_byte
+    mov sil, 0xF8
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
     jmp .done
 
 .op_add:
@@ -1648,6 +1821,9 @@ x86_emit_expr:
     jmp .done
 
 .op_div:
+    cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .raw_idiv
+
     ; Check division by zero: test rax, rax (48 85 C0)
     mov rdi, r13
     mov sil, 0x48
@@ -1741,7 +1917,39 @@ x86_emit_expr:
     call emit_byte
     jmp .done
 
+.raw_idiv:
+    ; mov rbx, rax; mov rax, rcx
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC3
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte
+
+    ; cqo; idiv rbx
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x99
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xF7
+    call emit_byte
+    mov sil, 0xFB
+    call emit_byte
+    jmp .done
+
 .op_mod:
+    cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .raw_imod
+
     ; Check division by zero: test rax, rax (48 85 C0)
     mov rdi, r13
     mov sil, 0x48
@@ -1822,6 +2030,41 @@ x86_emit_expr:
 
 .do_imod:
     mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x99
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xF7
+    call emit_byte
+    mov sil, 0xFB
+    call emit_byte            ; idiv rbx
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xD0
+    call emit_byte            ; mov rax, rdx
+    jmp .done
+
+.raw_imod:
+    ; mov rbx, rax; mov rax, rcx
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC3
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte
+
+    ; cqo; idiv rbx; mov rax, rdx
     mov sil, 0x48
     call emit_byte
     mov sil, 0x99
@@ -2006,8 +2249,32 @@ x86_emit_expr:
     jmp .done
 
 .chk_addr:
+    cmp cl, '~'
+    je .op_bnot
     cmp cl, '&'
     jne .done
+    jmp .do_addr
+
+.op_bnot:
+    ; not rax (48 F7 D0)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xF7
+    call emit_byte
+    mov sil, 0xD0
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.do_addr:
     mov rbx, [r12 + ASTNode.child1]
     mov rdi, [rbx + ASTNode.val]
     mov rsi, [rbx + ASTNode.val_len]

@@ -902,12 +902,16 @@ lex_operator_or_punct:
     jmp .emit_2char_op
 .c_le:
     cmp bl, '='
-    jne .check_1char
-    jmp .emit_2char_op
+    je .emit_2char_op
+    cmp bl, '<'
+    je .emit_2char_op
+    jmp .check_1char
 .c_ge:
     cmp bl, '='
-    jne .check_1char
-    jmp .emit_2char_op
+    je .emit_2char_op
+    cmp bl, '>'
+    je .emit_2char_op
+    jmp .check_1char
 
 .emit_2char_op:
     mov rdi, TOKEN_OP
@@ -954,6 +958,12 @@ lex_operator_or_punct:
     cmp al, '>'
     je .t_op
     cmp al, '&'
+    je .t_op
+    cmp al, '|'
+    je .t_op
+    cmp al, '^'
+    je .t_op
+    cmp al, '~'
     je .t_op
 
     xor rax, rax
