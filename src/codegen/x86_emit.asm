@@ -1435,6 +1435,35 @@ x86_emit_expr:
     cmp al, '9'
     jg .e_lit_str
 
+    xor r8, r8
+.chk_float_dot:
+    cmp r8, rcx
+    jge .is_int_lit
+    cmp byte [rdi + r8], '.'
+    je .e_lit_float
+    inc r8
+    jmp .chk_float_dot
+
+.e_lit_float:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte            ; xor rax, rax
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 2
+    call emit_dword          ; mov rdx, 2 (tag = 2 FLOAT)
+    jmp .done
+
+.is_int_lit:
     call parse_dec_int
     ; mov rax, imm64
     mov rdi, r13

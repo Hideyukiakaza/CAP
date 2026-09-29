@@ -1,4 +1,4 @@
-/*/ Expected:
+/*/ Expected: no EXCEPTION, empty serial, exit 137
 naked fn main():
     asm:
         cli

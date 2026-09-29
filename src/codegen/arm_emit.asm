@@ -953,6 +953,23 @@ arm_emit_expr:
     cmp al, '9'
     jg .e_lit_str_arm
 
+    xor r8, r8
+.chk_float_dot_arm:
+    cmp r8, rcx
+    jge .is_int_lit_arm
+    cmp byte [rdi + r8], '.'
+    je .e_lit_float_arm
+    inc r8
+    jmp .chk_float_dot_arm
+
+.e_lit_float_arm:
+    ; mov x0, #0 -> 0xD2800000
+    EMIT_ARM 0xD2800000
+    ; mov x1, #2 (FLOAT tag = 2) -> 0xD2800041
+    EMIT_ARM 0xD2800041
+    jmp .done
+
+.is_int_lit_arm:
     xor rsi, rsi
     call parse_int_literal
     mov rbx, rax
