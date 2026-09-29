@@ -1,29 +1,13 @@
-struct Gate:
-    lo: Int
-    hi: Int
-
-fn make_interrupt_gate(handler: Int, selector: Int):
-    off0 = handler & 0xFFFF
-    off1 = (handler >> 16) & 0xFFFF
-    off2 = (handler >> 32) & 0xFFFFFFFF
-    lo = off0 | (selector << 16) | (0x8E00 << 32) | (off1 << 48)
-    hi = off2
-    return Gate{lo: lo, hi: hi}
-
+/*/ Expected: EXCEPTION: vector=0 err=0x0 rip=0x0000000000100D00
+/*/ lgdt is omitted here because the freestanding boot stub GDT is already active with selectors 0x08 (code) and 0x10 (data).
 fn main():
-    handler = 0x100C37
-    selector = 8
-    off0 = handler & 0xFFFF
-    off1 = (handler >> 16) & 0xFFFF
-    off2 = (handler >> 32) & 0xFFFFFFFF
-    glo = off0 | (selector << 16) | (0x8E00 << 32) | (off1 << 48)
-    ghi = off2
-
     asm:
         mov rdi, 0x100500
-        mov rax, [rbp - 88]
+        mov rax, 0x00080C37
         mov [rdi], rax
-        mov rax, [rbp - 104]
+        mov rax, 0x00108E00
+        mov [rdi + 4], rax
+        mov rax, 0
         mov [rdi + 8], rax
 
         mov rax, 0x100400
