@@ -3113,6 +3113,7 @@ s_mne_syscall:db "syscall", 0
 s_mne_jmp:    db "jmp", 0
 s_mne_stosq:  db "stosq", 0
 s_mne_retfq:  db "retfq", 0
+s_mne_shr:    db "shr", 0
 
 align 8
 reg_table:
@@ -3294,6 +3295,7 @@ asm_table:
     dq s_mne_jmp, 3,  M_REG64, M_NONE, 0x00, 0x00, 0xFF, 4,            F_REX_W
     dq s_mne_stosq, 5, M_NONE, M_NONE, 0xF3, 0x00, 0xAB, NO_MODRM,     F_REX_W
     dq s_mne_retfq, 5, M_NONE, M_NONE, 0x00, 0x00, 0xCB, NO_MODRM,     F_REX_W
+    dq s_mne_shr, 3,   M_REG64, M_IMM,  0x00, 0x00, 0xC1, 5,            F_REX_W | F_IMM8
     dq 0, 0, 0, 0, 0, 0
 
 section .text

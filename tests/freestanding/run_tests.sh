@@ -18,7 +18,7 @@ run_one() {
     local stdout_fs stderr_fs exit_fs actual_fs compile_status
 
     local extra_flags=""
-    if [ "$base" = "17_boot_thin" ]; then
+    if [ "$base" = "17_boot_thin" ] || [ "$base" = "18_thin_exception" ]; then
         extra_flags="--boot-thin"
     fi
 

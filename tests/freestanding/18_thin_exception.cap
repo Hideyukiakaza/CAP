@@ -1,0 +1,216 @@
+/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100000
+/*/ de_handler VA: 0x0000000000100209
+/*/ Gate packing formula: see spec/runtime.md
+/*/ GDT descriptors: Code 0x08 = 0x00AF9A000000FFFF, Data 0x10 = 0x00CF92000000FFFF
+naked fn de_handler():
+    asm:
+        mov r12, [rsp]
+
+        mov rbx, 0x100800
+        mov rax, 0x3736353433323130
+        mov [rbx], rax
+        mov rax, 0x4645444342413938
+        mov [rbx + 8], rax
+
+        mov rdx, 0x3F8
+
+        mov al, 0x45
+        out dx, al
+        mov al, 0x58
+        out dx, al
+        mov al, 0x43
+        out dx, al
+        mov al, 0x45
+        out dx, al
+        mov al, 0x50
+        out dx, al
+        mov al, 0x54
+        out dx, al
+        mov al, 0x49
+        out dx, al
+        mov al, 0x4F
+        out dx, al
+        mov al, 0x4E
+        out dx, al
+        mov al, 0x3A
+        out dx, al
+        mov al, 0x20
+        out dx, al
+        mov al, 0x76
+        out dx, al
+        mov al, 0x65
+        out dx, al
+        mov al, 0x63
+        out dx, al
+        mov al, 0x74
+        out dx, al
+        mov al, 0x6F
+        out dx, al
+        mov al, 0x72
+        out dx, al
+        mov al, 0x3D
+        out dx, al
+        mov al, 0x30
+        out dx, al
+        mov al, 0x20
+        out dx, al
+        mov al, 0x65
+        out dx, al
+        mov al, 0x72
+        out dx, al
+        mov al, 0x72
+        out dx, al
+        mov al, 0x3D
+        out dx, al
+        mov al, 0x30
+        out dx, al
+        mov al, 0x78
+        out dx, al
+        mov al, 0x30
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        mov al, 0x20
+        out dx, al
+        mov al, 0x72
+        out dx, al
+        mov al, 0x69
+        out dx, al
+        mov al, 0x70
+        out dx, al
+        mov al, 0x3D
+        out dx, al
+        mov al, 0x30
+        out dx, al
+        mov al, 0x78
+        out dx, al
+        mov al, 0x30
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        out dx, al
+        mov al, 0x31
+        out dx, al
+        mov al, 0x30
+        out dx, al
+        mov al, 0x30
+        out dx, al
+
+        mov rax, r12
+        shr rax, 8
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
+        out dx, al
+
+        mov rax, r12
+        shr rax, 4
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
+        out dx, al
+
+        mov rax, r12
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
+        out dx, al
+
+        mov al, 0x0A
+        out dx, al
+
+        cli
+        hlt
+
+fn main():
+    asm:
+        mov rdi, 0x100500
+        mov rax, 0x00108E0000080209
+        mov [rdi], rax
+        mov rax, 0
+        mov [rdi + 8], rax
+
+        mov rax, 0x100400
+        mov rbx, 0x01FF
+        mov [rax], rbx
+        mov rbx, 0x100500
+        mov [rax + 2], rbx
+        lidt [rax]
+
+        mov rdi, 0x20000
+        mov rax, 0
+        mov rcx, 0x600
+        stosq
+
+        mov rdi, 0x20000
+        mov rax, 0x21003
+        mov [rdi], rax
+
+        mov rdi, 0x21000
+        mov rax, 0x22003
+        mov [rdi], rax
+
+        mov rdi, 0x22000
+        mov rax, 0x00000083
+        mov [rdi], rax
+
+        mov rdi, 0x22008
+        mov rax, 0x00200083
+        mov [rdi], rax
+
+        mov rdi, 0x22010
+        mov rax, 0x00400083
+        mov [rdi], rax
+
+        mov rax, 0x20000
+        mov cr3, rax
+
+        mov rdi, 0x100700
+        mov rax, 0
+        mov [rdi], rax
+        mov rax, 0x00AF9A000000FFFF
+        mov [rdi + 8], rax
+        mov rax, 0x00CF92000000FFFF
+        mov [rdi + 16], rax
+
+        mov rax, 0x1006F6
+        mov rbx, 0x017
+        mov [rax], rbx
+        mov rbx, 0x100700
+        mov [rax + 2], rbx
+        lgdt [rax]
+
+        mov ax, 0x10
+        mov ds, ax
+        mov es, ax
+        mov ss, ax
+
+        push 0x08
+        mov rax, 0x10048E
+        push rax
+        retfq
+
+    x = 1 / 0
+    return x
