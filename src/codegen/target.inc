@@ -4,6 +4,7 @@
 %define TARGET_ARM64        1
 %define TARGET_FREESTANDING 2
 %define TARGET_NO_BOOT_STUB 3
+%define TARGET_BOOT_THIN    4
 
 ; ELF Machine codes
 %define EM_X86_64  0x3E

@@ -73,6 +73,8 @@ x86_emit_program:
 
     cmp r14, TARGET_FREESTANDING
     je .emit_freestanding_start
+    cmp r14, TARGET_BOOT_THIN
+    je .emit_freestanding_start
     cmp r14, TARGET_NO_BOOT_STUB
     je .emit_functions
 
@@ -1607,6 +1609,8 @@ x86_emit_expr:
 
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
     je .skip_type_check
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
+    je .skip_type_check
 
     ; Check if left tag (r8) != 1 or right tag (rdx) != 1
     mov sil, 0x49
@@ -1889,6 +1893,8 @@ x86_emit_expr:
 .op_div:
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
     je .raw_idiv
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
+    je .raw_idiv
 
     ; Check division by zero: test rax, rax (48 85 C0)
     mov rdi, r13
@@ -2014,6 +2020,8 @@ x86_emit_expr:
 
 .op_mod:
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .raw_imod
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
     je .raw_imod
 
     ; Check division by zero: test rax, rax (48 85 C0)
@@ -2376,10 +2384,15 @@ x86_emit_expr:
     ; Function symbol found! rax = code offset fn_off
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
     je .addr_fn_fs
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
+    je .addr_fn_boot_thin
     add rax, 0x400078         ; hosted base VA
     jmp .addr_fn_emit
+.addr_fn_boot_thin:
+    add rax, 0x100200         ; freestanding thin base VA (0x100000 + 512)
+    jmp .addr_fn_emit
 .addr_fn_fs:
-    add rax, 0x100CC6         ; freestanding base VA (0x100000 + 3270)
+    add rax, 0x100CC6         ; freestanding fat base VA (0x100000 + 3270)
 .addr_fn_emit:
     ; Emit mov rax, imm64 (48 B8 <8-byte imm64>)
     mov rdi, r13

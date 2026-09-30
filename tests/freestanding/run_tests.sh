@@ -17,7 +17,12 @@ run_one() {
     local bin_fs="/tmp/cap_test_${base}_fs"
     local stdout_fs stderr_fs exit_fs actual_fs compile_status
 
-    "$CAPC" --freestanding -o "$bin_fs" "$src" 2>/tmp/cap_test_stderr
+    local extra_flags=""
+    if [ "$base" = "17_boot_thin" ]; then
+        extra_flags="--boot-thin"
+    fi
+
+    "$CAPC" --freestanding $extra_flags -o "$bin_fs" "$src" 2>/tmp/cap_test_stderr
     compile_status=$?
 
     if [ $compile_status -ne 0 ]; then

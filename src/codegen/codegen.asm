@@ -761,7 +761,10 @@ semantic_check_expr:
 
 .e_call:
     cmp qword [cg_target_arch], TARGET_FREESTANDING
+    je .do_fs_chk
+    cmp qword [cg_target_arch], TARGET_BOOT_THIN
     jne .chk_builtin
+.do_fs_chk:
 
     mov rdi, [r13 + ASTNode.val]
     mov rdx, [r13 + ASTNode.val_len]
