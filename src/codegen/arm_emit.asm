@@ -1302,6 +1302,8 @@ arm_emit_expr:
     mov cl, [rbx]
     cmp cl, '~'
     je .op_bnot_arm
+    cmp cl, '&'
+    je .do_addr_arm
     cmp cl, '-'
     jne .normal_un_op_arm
 
@@ -1332,6 +1334,53 @@ arm_emit_expr:
     mov eax, 0xD2800021
     EMIT_ARM eax
     EMIT_ARM 0xCB0003E0
+    jmp .done
+
+.do_addr_arm:
+    mov rbx, [r12 + ASTNode.child1]
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    call find_fn_symbol
+    cmp rax, -1
+    je .addr_var_arm
+
+    ; Function symbol found! rax = fn_off
+    add rax, 0x400078         ; hosted base VA
+    mov rbx, rax
+
+    ; mov x0, imm (lower 16) -> movz x0, imm16
+    mov eax, ebx
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xD2800000
+    EMIT_ARM eax
+
+    ; mov x0, imm (upper 16) -> movk x0, imm16, lsl #16
+    mov rax, rbx
+    shr rax, 16
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xF2A00000
+    EMIT_ARM eax
+
+    ; mov x1, #1 (INT tag = 1) -> 0xD2800021
+    EMIT_ARM 0xD2800021
+    jmp .done
+
+.addr_var_arm:
+    mov rbx, [r12 + ASTNode.child1]
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    call find_symbol_offset
+    neg rax
+    and eax, 0xFFF
+    shl eax, 10
+    mov r8d, 0xD10003A0
+    or eax, r8d
+    EMIT_ARM eax
+
+    ; mov x1, #1 (INT tag = 1) -> 0xD2800021
+    EMIT_ARM 0xD2800021
     jmp .done
 
 .op_bnot_arm:
