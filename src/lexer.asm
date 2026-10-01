@@ -35,7 +35,7 @@ kw_range:  db "range", 0
 kw_naked:  db "naked", 0
 
 section .bss
-global lexer_tokens, lexer_token_count, lexer_token_idx
+global lexer_tokens, lexer_token_count, lexer_token_idx, line_num
 lexer_tokens:      resq 1
 lexer_token_count: resq 1
 lexer_token_capacity: resq 1
@@ -1177,21 +1177,21 @@ lexer_next_token:
     ret
 
 lexer_peek_token:
-    mov rax, [lexer_token_idx]
-    cmp rax, [lexer_token_count]
-    jge .out_of_bounds_peek
     mov r8, [lexer_tokens]
-    imul r9, rax, Token_size
+    test r8, r8
+    jz .out_null
+    mov rax, [lexer_token_count]
+    mov rcx, [lexer_token_idx]
+    cmp rcx, rax
+    jge .out_null
+
+    imul r9, rcx, Token_size
     add r8, r9
     mov rax, r8
     ret
-.out_of_bounds_peek:
-    mov r8, [lexer_tokens]
-    mov rax, [lexer_token_count]
-    dec rax
-    imul r9, rax, Token_size
-    add r8, r9
-    mov rax, r8
+
+.out_null:
+    xor rax, rax
     ret
 
 lexer_rewind:

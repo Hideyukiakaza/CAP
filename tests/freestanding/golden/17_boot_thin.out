@@ -1,4 +1,5 @@
-EXIT: 137
+EXIT: 124
 STDOUT:
 
 STDERR:
+qemu-system-x86_64: terminating on signal 15 from pid PID (timeout)

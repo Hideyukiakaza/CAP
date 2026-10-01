@@ -5,7 +5,7 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
+err_unsupported_asm: db "SyntaxError: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
 s_print:             db "print", 0
 s_input:             db "input", 0
 s_fstring:           db "fstring", 0
@@ -1476,6 +1476,7 @@ x86_emit_expr:
     jmp .done
 
 .is_int_lit:
+    mov r8, [r12 + ASTNode.line]
     call parse_dec_int
     ; mov rax, imm64
     mov rdi, r13
@@ -2286,6 +2287,7 @@ x86_emit_expr:
     mov rcx, [r12 + ASTNode.child1]
     mov rcx, [rcx + ASTNode.val_len]
     mov rsi, 1
+    mov r8, [r12 + ASTNode.line]
     call parse_int_literal
 
     ; mov rax, imm64
@@ -3009,9 +3011,9 @@ struc AsmTableEntry
 endstruc
 
 section .data
-err_asm_unknown_mne_1: db "Error: unknown asm instruction '", 0
+err_asm_unknown_mne_1: db "SyntaxError: unknown asm instruction '", 0
 err_asm_unknown_mne_2: db "'", 10, 0
-err_asm_invalid_ops_1: db "Error: invalid operands for '", 0
+err_asm_invalid_ops_1: db "SyntaxError: invalid operands for '", 0
 err_asm_invalid_ops_2: db "'", 10, 0
 
 s_reg_rax: db "rax", 0

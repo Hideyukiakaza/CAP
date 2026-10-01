@@ -1,0 +1,3 @@
+fn main():
+    x = y + 1
+    return x

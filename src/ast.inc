@@ -41,4 +41,5 @@ struc ASTNode
     .child3: resq 1
     .next:   resq 1
     .extra:  resq 1
+    .line:   resq 1
 endstruc

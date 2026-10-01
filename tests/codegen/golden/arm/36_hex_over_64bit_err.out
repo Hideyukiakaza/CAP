@@ -1,0 +1,1 @@
+COMPILE_ERROR: LexerError: hex literal '0x10000000000000000' exceeds 64 bits (line 2)

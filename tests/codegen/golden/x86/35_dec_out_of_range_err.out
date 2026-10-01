@@ -1,0 +1,1 @@
+COMPILE_ERROR: LexerError: integer literal '9223372036854775808' out of range (line 2)

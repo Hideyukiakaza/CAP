@@ -5,7 +5,7 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-err_unsupported_arm_asm: db "Error: asm block contains unsupported ARM instruction. Supported instructions: mov, add, sub, svc, ret", 10, 0
+err_unsupported_arm_asm: db "SyntaxError: asm block contains unsupported ARM instruction. Supported instructions: mov, add, sub, svc, ret", 10, 0
 s_main_arm:              db "main", 0
 s_print_arm:             db "print", 0
 s_input_arm:             db "input", 0
@@ -971,6 +971,7 @@ arm_emit_expr:
 
 .is_int_lit_arm:
     xor rsi, rsi
+    mov r8, [r12 + ASTNode.line]
     call parse_int_literal
     mov rbx, rax
 
@@ -1324,6 +1325,7 @@ arm_emit_expr:
     mov rcx, [r12 + ASTNode.child1]
     mov rcx, [rcx + ASTNode.val_len]
     mov rsi, 1
+    mov r8, [r12 + ASTNode.line]
     call parse_int_literal
 
     and eax, 0xFFFF

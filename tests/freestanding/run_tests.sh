@@ -35,7 +35,7 @@ $stderr_fs
 EOF
 )"
     else
-        stdout_fs="$(timeout -s KILL 10 qemu-system-x86_64 -kernel "$bin_fs" -serial stdio -display none -no-reboot 2>/tmp/cap_test_stderr)"
+        stdout_fs="$(timeout 10 qemu-system-x86_64 -kernel "$bin_fs" -serial stdio -display none -no-reboot 2>/tmp/cap_test_stderr)"
         exit_fs=$?
         stderr_fs="$(cat /tmp/cap_test_stderr | sed -E 's/pid [0-9]+/pid PID/g')"
         actual_fs="$(cat <<EOF
