@@ -1,4 +1,4 @@
-/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100000
+/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000000000
 /*/ de_handler VA: 0x0000000000100209
 /*/ Gate packing formula: see spec/runtime.md
 /*/ GDT descriptors: Code 0x08 = 0x00AF9A000000FFFF, Data 0x10 = 0x00CF92000000FFFF
@@ -97,22 +97,109 @@ naked fn de_handler():
         out dx, al
         mov al, 0x78
         out dx, al
-        mov al, 0x30
+
+        mov rax, r12
+        shr rax, 60
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 56
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 52
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 48
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 44
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 40
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 36
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 32
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 28
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
+
+        mov rax, r12
+        shr rax, 24
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
-        mov al, 0x31
+
+        mov rax, r12
+        shr rax, 20
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
-        mov al, 0x30
+
+        mov rax, r12
+        shr rax, 16
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
-        mov al, 0x30
+
+        mov rax, r12
+        shr rax, 12
+        and rax, 0x0F
+        mov rbx, 0x100800
+        add rbx, rax
+        mov al, [rbx]
         out dx, al
 
         mov rax, r12
@@ -208,7 +295,7 @@ fn main():
         mov ss, ax
 
         push 0x08
-        mov rax, 0x10048E
+        mov rax, 0x1005FF
         push rax
         retfq
 
