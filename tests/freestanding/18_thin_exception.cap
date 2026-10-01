@@ -5,70 +5,61 @@
 naked fn de_handler():
     asm:
         mov r12, [rsp]
-
-        mov rbx, 0x100800
-        mov rax, 0x3736353433323130
-        mov [rbx], rax
-        mov rax, 0x4645444342413938
-        mov [rbx + 8], rax
-
         mov rdx, 0x3F8
 
-        mov al, 0x45
+        mov al, 69
         out dx, al
-        mov al, 0x58
+        mov al, 88
         out dx, al
-        mov al, 0x43
+        mov al, 67
         out dx, al
-        mov al, 0x45
+        mov al, 69
         out dx, al
-        mov al, 0x50
+        mov al, 80
         out dx, al
-        mov al, 0x54
+        mov al, 84
         out dx, al
-        mov al, 0x49
+        mov al, 73
         out dx, al
-        mov al, 0x4F
+        mov al, 79
         out dx, al
-        mov al, 0x4E
+        mov al, 78
         out dx, al
-        mov al, 0x3A
+        mov al, 58
         out dx, al
-        mov al, 0x20
+        mov al, 32
         out dx, al
-        mov al, 0x76
+        mov al, 118
         out dx, al
-        mov al, 0x65
+        mov al, 101
         out dx, al
-        mov al, 0x63
+        mov al, 99
         out dx, al
-        mov al, 0x74
+        mov al, 116
         out dx, al
-        mov al, 0x6F
+        mov al, 111
         out dx, al
-        mov al, 0x72
+        mov al, 114
         out dx, al
-        mov al, 0x3D
+        mov al, 61
         out dx, al
-        mov al, 0x30
+        mov al, 48
         out dx, al
-        mov al, 0x20
+        mov al, 32
         out dx, al
-        mov al, 0x65
+        mov al, 101
         out dx, al
-        mov al, 0x72
+        mov al, 114
         out dx, al
-        mov al, 0x72
+        mov al, 114
         out dx, al
-        mov al, 0x3D
+        mov al, 61
         out dx, al
-        mov al, 0x30
+        mov al, 48
         out dx, al
-        mov al, 0x78
+        mov al, 120
         out dx, al
-        mov al, 0x30
-        out dx, al
-        out dx, al
+        mov al, 48
         out dx, al
         out dx, al
         out dx, al
@@ -83,149 +74,231 @@ naked fn de_handler():
         out dx, al
         out dx, al
         out dx, al
-        mov al, 0x20
         out dx, al
-        mov al, 0x72
         out dx, al
-        mov al, 0x69
+        mov al, 32
         out dx, al
-        mov al, 0x70
+        mov al, 114
         out dx, al
-        mov al, 0x3D
+        mov al, 105
         out dx, al
-        mov al, 0x30
+        mov al, 112
         out dx, al
-        mov al, 0x78
+        mov al, 61
+        out dx, al
+        mov al, 48
+        out dx, al
+        mov al, 120
         out dx, al
 
         mov rax, r12
         shr rax, 60
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 56
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 52
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 48
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 44
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 40
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 36
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 32
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 28
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 24
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 20
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 16
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 12
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 8
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
         shr rax, 4
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
         mov rax, r12
-        and rax, 0x0F
-        mov rbx, 0x100800
-        add rbx, rax
-        mov al, [rbx]
+        and eax, 15
+        mov rbx, rax
+        add eax, 6
+        shr eax, 4
+        xor eax, 255
+        add eax, 1
+        and eax, 7
+        add eax, ebx
+        add eax, 48
         out dx, al
 
-        mov al, 0x0A
+        mov al, 10
         out dx, al
 
         cli
@@ -295,7 +368,7 @@ fn main():
         mov ss, ax
 
         push 0x08
-        mov rax, 0x1005FF
+        mov rax, 0x100570
         push rax
         retfq
 
