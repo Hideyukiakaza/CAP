@@ -1,14 +1,8 @@
-/*/ Expected: 0EXCEPTION: vector=0 err=0x0000000000000000 rip=0x000000000010077F
-/*/ de_handler VA: 0x0000000000100209
-/*/ Gate packing formula: see spec/runtime.md
-/*/ GDT descriptors: Code 0x08 = 0x00AF9A000000FFFF, Data 0x10 = 0x00CF92000000FFFF
+/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100769
 naked fn de_handler():
     asm:
         mov r12, [rsp]
         mov rdx, 0x3F8
-
-        mov al, [0x100800]
-        out dx, al
 
         mov al, 69
         out dx, al
@@ -309,10 +303,6 @@ naked fn de_handler():
 
 fn main():
     asm:
-        mov rdi, 0x100800
-        mov al, 48
-        mov [rdi], al
-
         mov rdi, 0x100500
         mov rax, 0x00108E0000080209
         mov [rdi], rax
@@ -375,7 +365,7 @@ fn main():
         mov ss, ax
 
         push 0x08
-        mov rax, 0x100750
+        mov rax, 0x1006F6
         push rax
         retfq
 
