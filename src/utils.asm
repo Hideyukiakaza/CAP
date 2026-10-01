@@ -196,7 +196,6 @@ print_num:
     pop rax
     ret
 
-err_num_out_of_range: db "Error: integer literal out of range", 10, 0
 
 parse_dec_int:
     xor rsi, rsi

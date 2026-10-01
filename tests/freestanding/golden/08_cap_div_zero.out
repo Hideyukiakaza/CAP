@@ -2,4 +2,3 @@ EXIT: 124
 STDOUT:
 EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100D09
 STDERR:
-qemu-system-x86_64: terminating on signal 15 from pid PID (timeout)

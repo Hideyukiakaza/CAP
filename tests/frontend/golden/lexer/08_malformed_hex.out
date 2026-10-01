@@ -2,4 +2,4 @@ EXIT: 1
 STDOUT:
 
 STDERR:
-LexerError: malformed numeric literal '0xG' on line 1
+LexerError: malformed numeric literal '0xG' (line 1)

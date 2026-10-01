@@ -8,7 +8,7 @@ Compile-time errors occur during tokenization, parsing, or semantic analysis/cod
 
 | Error Class | Error Message Format | Cause |
 | :--- | :--- | :--- |
-| `LexerError` | `LexerError: malformed numeric literal '<spelling>' on line <L>` | Invalid characters or bad `_` placement in numeric tokens (e.g. `10abc`, `0xG`, `0b102`, `1_`, `1__0`). |
+| `LexerError` | `LexerError: malformed numeric literal '<spelling>' (line <L>)` | Invalid characters or bad `_` placement in numeric tokens (e.g. `10abc`, `0xG`, `0b102`, `1_`, `1__0`). |
 | `LexerError` | `LexerError: integer literal '<spelling>' out of range (line <L>)` | Decimal integer literal exceeds maximum permitted bounds (`> 9223372036854775807`, or `9223372036854775808` un-negated). |
 | `LexerError` | `LexerError: hex literal '<spelling>' exceeds 64 bits (line <L>)` | Hexadecimal literal exceeds 64 bits (more than 16 hex digits). |
 | `LexerError` | `LexerError: binary literal '<spelling>' exceeds 64 bits (line <L>)` | Binary literal exceeds 64 bits (more than 64 binary digits). |
@@ -18,6 +18,16 @@ Compile-time errors occur during tokenization, parsing, or semantic analysis/cod
 | `NameError` | `NameError: main function not found` | Source file lacks a top-level `main` function declaration. |
 | `TypeError` | `TypeError: cannot access field '<field>': '<var>' is not a struct (line <L>)` | Field access on a non-struct type or scalar literal (e.g. `10.x`). Includes hint for unannotated struct parameters (`struct parameters need an annotation, e.g. p: Point`). |
 | `TypeError` | `TypeError: struct '<struct>' has no field '<field>' (line <L>)` | Accessing a field that does not exist on the target struct. |
+
+## CLI Errors
+
+Command-line and driver usage errors produce `Error: <description>` output on `stderr` and exit with code `1`. These are environment/invocation errors rather than language compile diagnostics:
+
+- `Error: Could not open source file` — The specified input file path could not be opened.
+- `Error: Could not read source file` — The source file could not be read into memory.
+- `Error: -o flag requires an output filename argument` — `-o` option provided without a trailing output path.
+- `Error: --boot-thin requires --freestanding or -k` — `--boot-thin` flag specified without enabling freestanding target mode.
+- `Error: Could not open output file for writing` — The target output ELF binary could not be opened or created for writing.
 
 ## Exit Code 101: Runtime Traps
 

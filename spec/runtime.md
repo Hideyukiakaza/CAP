@@ -40,7 +40,7 @@ When a runtime trap fires, CAP executables write a diagnostic error message to `
     - `lo = (handler & 0xFFFF) | (selector << 16) | (0x8E00 << 32) | (((handler >> 16) & 0xFFFF) << 48)`
     - `hi = (handler >> 32) & 0xFFFFFFFF`
   - IDT Exception Printer Address: `de_handler` (`0x100CCF`) trampolines to stub common exception printer at `0x100BC8` (outputs `EXCEPTION: vector=<dec> err=0x<16 hex> rip=0x<16 hex>\n` to serial port `0x3F8`). Thin boot mode (`--boot-thin`) excludes the stub printer.
-  - *Non-canonical RIP Exception Report:* When a `ret` instruction pops a non-canonical address (e.g. `0x0000800000000000`) into `RIP`, QEMU's x86_64 CPU model records the target non-canonical `RIP` (`0x0000800000000000`) on the `#GP` (vector 13, error 0) stack frame during instruction fetch/branch validation.
+  - *Non-canonical RIP Exception Report:* When a `ret` instruction pops a non-canonical address (e.g. `0x0000800000000000`) into `RIP`, QEMU's x86_64 CPU model records the target non-canonical `RIP` (`0x0000800000000000`) on the `#GP` (vector 13, error 0) stack frame during instruction fetch/branch validation. Real hardware behavior for this case has not been verified, and QEMU's reported RIP must not be taken as a hardware guarantee.
 
 ## Freestanding Blob Paging
 

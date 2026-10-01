@@ -10,7 +10,8 @@ err_mismatch_indent: db "SyntaxError: Unindent does not match any outer indentat
 err_unexpected_char: db "LexerError: Unexpected character", 10, 0
 err_unterm_string: db "LexerError: Unterminated string literal", 10, 0
 err_lexer_malformed_num_1: db "LexerError: malformed numeric literal '", 0
-err_lexer_malformed_num_2: db "' on line ", 0
+err_lexer_malformed_num_2: db "' (line ", 0
+s_close_paren_nl: db ")", 10, 0
 err_newline: db 10, 0
 
 kw_if:     db "if", 0
@@ -715,7 +716,7 @@ lex_number_token:
     call print_err
     mov rdi, [line_num]
     call print_err_num
-    mov rsi, err_newline
+    mov rsi, s_close_paren_nl
     call print_err
 
     mov rdi, 1
