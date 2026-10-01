@@ -11,7 +11,7 @@ section .data
 err_write_elf: db "Error: Could not open output file for writing", 10, 0
 
 section .text
-global write_elf64_binary
+global write_elf64_binary, boot_thin_header
 extern sys_open, sys_write, sys_close, print_err, sys_exit
 
 section .data

@@ -26,6 +26,7 @@ extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_off
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
 extern print_err, print_err_bytes, sys_exit, str_ncmp, parse_dec_int, parse_int_literal
+extern boot_thin_header
 
 struc X86State
     .code_buf:     resq 1
@@ -212,6 +213,8 @@ x86_emit_program:
 .done_fns:
     cmp r14, TARGET_NO_BOOT_STUB
     je .no_patch_main
+    cmp r14, TARGET_BOOT_THIN
+    je .patch_boot_thin_main
 
     ; Patch call main in _start (at file offset 1)
     mov rax, [xstate + X86State.fn_main_off]
@@ -220,6 +223,13 @@ x86_emit_program:
     mov rsi, 1
     mov rdx, rax
     call patch_dword
+    jmp .no_patch_main
+
+.patch_boot_thin_main:
+    mov rax, [xstate + X86State.fn_main_off]
+    add rax, 251             ; rel32 = (512 + fn_main_off) - (256 + 5) = 251 + fn_main_off
+    lea rdi, [boot_thin_header]
+    mov dword [rdi + 257], eax
 
 .no_patch_main:
     pop r14
