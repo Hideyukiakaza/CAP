@@ -10,3 +10,5 @@ Initial alpha release of CAP for Linux x86-64.
 - Lexer and parser supporting Python-style indentation, functions, variables, structs, control flow (`if`/`elif`/`else`, `while`, `loop`, `for` with `range`), `asm:` blocks, `alloc`/`defer`/`free`, f-strings, bitwise operators, and unary address-of function operator (`&fn`).
 - Single-pass direct ELF64 executable generation without intermediate compiler infrastructure.
 - Comprehensive test suites covering frontend parsing (36 tests), direct code generation & execution (76 tests), freestanding bare-metal booting under QEMU (19 tests), and CLI / documentation examples.
+
+- Fixed: the arithmetic type check now applies to the left operand on x86-64 and ARM64
