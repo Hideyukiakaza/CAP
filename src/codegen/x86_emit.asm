@@ -558,7 +558,7 @@ x86_emit_stmt:
     push r13
     push r14
     push r15
-    sub rsp, 40              ; stack space for loop state: [rbp-32]=i_off, [rbp-40]=stop_off, [rbp-48]=step_off, [rbp-56]=pos_fixup, [rbp-64]=neg_fixup
+    sub rsp, 80              ; stack space for loop state: [rbp-32]=i_off, [rbp-40]=stop_off, [rbp-48]=step_off, [rbp-56]=pos_fixup, [rbp-64]=neg_fixup
 
     mov r12, rdi             ; stmt node
     mov r13, [xstate + X86State.code_buf]
@@ -1031,8 +1031,24 @@ x86_emit_stmt:
     mov rsi, [r12 + ASTNode.val_len]
     mov rdx, rcx
     call add_symbol
-    add qword [xstate + X86State.stack_offset], 8
+    add qword [xstate + X86State.stack_offset], 16
     mov [rbp - 32], rcx      ; for_i_off
+
+    ; Store tag 1 for loop variable i: mov qword [rbp - (i_off + 8)], 1
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    add rax, 8
+    neg rax
+    mov esi, eax
+    call emit_dword
+    mov esi, 1
+    call emit_dword
 
     ; Allocate stop limit slot
     mov rcx, [xstate + X86State.stack_offset]
@@ -1421,7 +1437,7 @@ x86_emit_stmt:
     jmp .stmt_loop
 
 .done:
-    add rsp, 40
+    add rsp, 80
     pop r15
     pop r14
     pop r13
