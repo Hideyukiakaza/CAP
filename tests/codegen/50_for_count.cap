@@ -1,0 +1,2 @@
+for i in 10: /*/ mean range(10) 0-9
+    print("hi")

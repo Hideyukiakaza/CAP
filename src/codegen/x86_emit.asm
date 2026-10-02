@@ -66,6 +66,7 @@ defer_nodes: resq 256
 defer_count: resq 1
 scope_defer_base: resq 64
 scope_depth: resq 1
+x86_break_head: resq 1
 
 section .text
 
@@ -254,6 +255,37 @@ x86_emit_program:
     ret
 
 
+x86_patch_break_list:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r10
+
+    mov rax, [rdi + 16]        ; len
+    mov rbx, [x86_break_head]
+.patch_loop:
+    test rbx, rbx
+    jz .done
+    mov rcx, [rdi + 0]         ; ptr
+    mov r10d, [rcx + rbx]
+    mov rdx, rax
+    sub rdx, rbx
+    sub rdx, 4
+    push rax
+    push r10
+    mov rsi, rbx
+    call patch_dword
+    pop r10
+    pop rax
+    mov rbx, r10
+    jmp .patch_loop
+.done:
+    pop r10
+    pop rbx
+    pop rbp
+    ret
+
+
 x86_emit_fn:
     push rbp
     mov rbp, rsp
@@ -266,6 +298,7 @@ x86_emit_fn:
     mov qword [defer_count], 0
     mov qword [scope_depth], 0
     mov qword [scope_defer_base], 0
+    mov qword [x86_break_head], 0
 
     mov r12, rdi             ; fn AST node
     mov r13, [xstate + X86State.code_buf]
@@ -928,6 +961,9 @@ x86_emit_stmt:
     jmp .next
 
 .s_while:
+    push qword [x86_break_head]
+    mov qword [x86_break_head], 0
+
     mov rbx, [r13 + 16]      ; loop_start
     mov [xstate + X86State.loop_start], rbx
 
@@ -978,9 +1014,17 @@ x86_emit_stmt:
     mov rsi, r10
     mov rdx, rax
     call patch_dword
+
+    ; Patch breaks
+    mov rdi, r13
+    call x86_patch_break_list
+    pop qword [x86_break_head]
     jmp .next
 
 .s_for:
+    push qword [x86_break_head]
+    mov qword [x86_break_head], 0
+
     ; Bind loop var i on function stack frame
     mov rcx, [xstate + X86State.stack_offset]
     mov rdi, [r12 + ASTNode.val]
@@ -1317,9 +1361,17 @@ x86_emit_stmt:
     mov rdx, rax
     call patch_dword
 
+    ; Patch breaks
+    mov rdi, r13
+    call x86_patch_break_list
+    pop qword [x86_break_head]
+
     jmp .next
 
 .s_loop:
+    push qword [x86_break_head]
+    mov qword [x86_break_head], 0
+
     mov rbx, [r13 + 16]
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_stmt
@@ -1333,9 +1385,23 @@ x86_emit_stmt:
     sub rax, rcx
     mov esi, eax
     call emit_dword
+
+    ; Patch breaks
+    mov rdi, r13
+    call x86_patch_break_list
+    pop qword [x86_break_head]
     jmp .next
 
 .s_break:
+    mov rdi, r13
+    mov sil, 0xE9
+    call emit_byte           ; jmp rel32
+
+    mov rax, [r13 + 16]      ; fixup_off
+    mov rsi, [x86_break_head]    ; old head
+    mov rdi, r13
+    call emit_dword          ; placeholder rel32 stores old head
+    mov [x86_break_head], rax    ; new head
     jmp .next
 
 .s_asm_block:

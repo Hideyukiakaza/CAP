@@ -57,6 +57,7 @@ err_naked_return: db "SyntaxError: return not allowed in naked function", 0
 err_naked_var:    db "SyntaxError: variable declaration not allowed in naked function", 0
 err_naked_alloc:  db "SyntaxError: alloc not allowed in naked function", 0
 err_naked_defer:  db "SyntaxError: defer not allowed in naked function", 0
+err_break_outside_loop: db "SyntaxError: 'break' outside loop", 0
 
 s_builtin_print:    db "print", 0
 s_builtin_input:    db "input", 0
@@ -240,6 +241,10 @@ compile_program:
     ; Process Struct Declarations (compute size and field offsets)
     mov rdi, r12
     call process_struct_decls
+
+    ; Rewrite for-loops in AST (for i in 10 -> for i in range(10))
+    mov rdi, r12
+    call rewrite_for_loops_program
 
     ; Perform Semantic Checks
     mov rdi, r12
@@ -647,6 +652,143 @@ process_struct_decls:
     ret
 
 
+; Pre-pass for Rewriting For-Loops (for i in 10 -> for i in range(10))
+rewrite_for_loops_program:
+    push rbp
+    mov rbp, rsp
+    push rbx
+
+    mov rbx, [rdi + ASTNode.child1]
+.rw_fn_loop:
+    test rbx, rbx
+    jz .rw_done_program
+
+    cmp qword [rbx + ASTNode.type], AST_FN_DECL
+    jne .rw_next_top
+
+    mov rdi, [rbx + ASTNode.child2]
+    call rewrite_for_loops_stmts
+
+.rw_next_top:
+    mov rbx, [rbx + ASTNode.next]
+    jmp .rw_fn_loop
+
+.rw_done_program:
+    pop rbx
+    pop rbp
+    ret
+
+
+rewrite_for_loops_stmts:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+
+    mov rbx, rdi
+
+.rw_stmt_loop:
+    test rbx, rbx
+    jz .rw_done_stmts
+
+    mov rax, [rbx + ASTNode.type]
+
+    cmp rax, AST_BLOCK
+    je .rw_block
+    cmp rax, AST_FOR
+    je .rw_for
+    cmp rax, AST_WHILE
+    je .rw_while
+    cmp rax, AST_LOOP
+    je .rw_loop
+    cmp rax, AST_IF
+    je .rw_if
+    cmp rax, AST_ELIF
+    je .rw_if
+    cmp rax, AST_ELSE
+    je .rw_else
+    cmp rax, AST_DEFER
+    je .rw_defer
+    jmp .rw_next_stmt
+
+.rw_block:
+    mov rdi, [rbx + ASTNode.child1]
+    call rewrite_for_loops_stmts
+    jmp .rw_next_stmt
+
+.rw_for:
+    ; Check if child1 is AST_CALL named "range"
+    mov r12, [rbx + ASTNode.child1]
+    test r12, r12
+    jz .rw_for_body
+
+    cmp qword [r12 + ASTNode.type], AST_CALL
+    jne .do_rewrite_for_expr
+
+    cmp qword [r12 + ASTNode.val_len], 5
+    jne .do_rewrite_for_expr
+
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_builtin_range
+    mov rdx, 5
+    call str_ncmp
+    test rax, rax
+    jz .rw_for_body                  ; already range call!
+
+.do_rewrite_for_expr:
+    ; Wrap r12 in AST_CALL("range")
+    mov rdi, AST_CALL
+    call create_ast_node
+    mov qword [rax + ASTNode.val], s_builtin_range
+    mov qword [rax + ASTNode.val_len], 5
+    mov [rax + ASTNode.child1], r12
+    mov rcx, [r12 + ASTNode.line]
+    mov [rax + ASTNode.line], rcx
+    mov [rbx + ASTNode.child1], rax
+
+.rw_for_body:
+    mov rdi, [rbx + ASTNode.child2]
+    call rewrite_for_loops_stmts
+    jmp .rw_next_stmt
+
+.rw_while:
+    mov rdi, [rbx + ASTNode.child2]
+    call rewrite_for_loops_stmts
+    jmp .rw_next_stmt
+
+.rw_loop:
+    mov rdi, [rbx + ASTNode.child1]
+    call rewrite_for_loops_stmts
+    jmp .rw_next_stmt
+
+.rw_if:
+    mov rdi, [rbx + ASTNode.child2]
+    call rewrite_for_loops_stmts
+    mov rdi, [rbx + ASTNode.child3]
+    call rewrite_for_loops_stmts
+    jmp .rw_next_stmt
+
+.rw_else:
+    mov rdi, [rbx + ASTNode.child1]
+    call rewrite_for_loops_stmts
+    jmp .rw_next_stmt
+
+.rw_defer:
+    mov rdi, [rbx + ASTNode.child1]
+    call rewrite_for_loops_stmts
+    jmp .rw_next_stmt
+
+.rw_next_stmt:
+    mov rbx, [rbx + ASTNode.next]
+    jmp .rw_stmt_loop
+
+.rw_done_stmts:
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+
 ; Semantic Check & Symbol Tables
 section .bss
 global sym_buf, fn_buf, cg_target_arch
@@ -660,6 +802,7 @@ local_sym_buf: resb 8192
 local_sym_count: resq 1
 cg_target_arch: resq 1
 in_naked_fn: resq 1
+loop_depth: resq 1
 
 top_level_vars_buf: resb 8192
 top_level_vars_count: resq 1
@@ -717,6 +860,7 @@ semantic_check_fn:
 
     mov rax, [r13 + ASTNode.extra]
     mov [in_naked_fn], rax
+    mov qword [loop_depth], 0
 
     mov qword [local_sym_count], 0
 
@@ -871,6 +1015,8 @@ semantic_check_stmt:
     je .s_while
     cmp rax, AST_LOOP
     je .s_loop
+    cmp rax, AST_BREAK
+    je .s_break
     cmp rax, AST_DEFER
     je .s_defer
     cmp rax, AST_RETURN
@@ -989,9 +1135,11 @@ semantic_check_stmt:
     call add_local_symbol
 
 .for_body:
+    inc qword [loop_depth]
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child2]
     call semantic_check_stmt
+    dec qword [loop_depth]
     jmp .stmt_done
 
 .s_while:
@@ -999,16 +1147,32 @@ semantic_check_stmt:
     mov rsi, [r13 + ASTNode.child1]
     call semantic_check_expr
 
+    inc qword [loop_depth]
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child2]
     call semantic_check_stmt
+    dec qword [loop_depth]
     jmp .stmt_done
 
 .s_loop:
+    inc qword [loop_depth]
     mov rdi, r12
     mov rsi, [r13 + ASTNode.child1]
     call semantic_check_stmt
+    dec qword [loop_depth]
     jmp .stmt_done
+
+.s_break:
+    cmp qword [loop_depth], 0
+    jne .stmt_done
+    mov rsi, err_break_outside_loop
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
+    mov rdi, 1
+    call sys_exit
 
 .s_defer:
     cmp qword [in_naked_fn], 1

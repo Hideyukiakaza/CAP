@@ -57,6 +57,7 @@ armstate: resb ArmState_size
 arm_defer_nodes: resq 256
 arm_defer_count: resq 1
 arm_is_main_fn: resq 1
+arm_break_head: resq 1
 
 section .text
 
@@ -188,6 +189,39 @@ arm_emit_program:
     ret
 
 
+arm_patch_break_list:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r10
+
+    mov rax, [rdi + 16]        ; len
+    mov rbx, [arm_break_head]
+.patch_loop:
+    test rbx, rbx
+    jz .done
+    mov rcx, [rdi + 0]         ; ptr
+    mov r10d, [rcx + rbx]
+    mov rdx, rax
+    sub rdx, rbx
+    sar rdx, 2
+    and edx, 0x03FFFFFF
+    or edx, 0x14000000
+    push rax
+    push r10
+    mov rsi, rbx
+    call patch_dword
+    pop r10
+    pop rax
+    mov rbx, r10
+    jmp .patch_loop
+.done:
+    pop r10
+    pop rbx
+    pop rbp
+    ret
+
+
 arm_emit_fn:
     push rbp
     mov rbp, rsp
@@ -199,6 +233,7 @@ arm_emit_fn:
 
     mov qword [arm_defer_count], 0
     mov qword [arm_is_main_fn], 0
+    mov qword [arm_break_head], 0
 
     mov r12, rdi             ; fn AST node
     mov r13, [armstate + ArmState.code_buf]
@@ -406,6 +441,8 @@ arm_emit_stmt:
     je .s_for
     cmp rax, AST_LOOP
     je .s_loop
+    cmp rax, AST_BREAK
+    je .s_break
     cmp rax, AST_ASM_BLOCK
     je .s_asm_block
     cmp rax, AST_EXPR_STMT
@@ -720,6 +757,9 @@ arm_emit_stmt:
     jmp .next
 
 .s_while:
+    push qword [arm_break_head]
+    mov qword [arm_break_head], 0
+
     mov rbx, [r13 + 16]      ; loop_start
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_expr
@@ -757,9 +797,17 @@ arm_emit_stmt:
     mov rsi, r10
     mov edx, eax
     call patch_dword
+
+    ; Patch breaks
+    mov rdi, r13
+    call arm_patch_break_list
+    pop qword [arm_break_head]
     jmp .next
 
 .s_for:
+    push qword [arm_break_head]
+    mov qword [arm_break_head], 0
+
     push rbp
     mov rbp, rsp
     sub rsp, 32
@@ -913,9 +961,17 @@ arm_emit_stmt:
 
     mov rsp, rbp
     pop rbp
+
+    ; Patch breaks
+    mov rdi, r13
+    call arm_patch_break_list
+    pop qword [arm_break_head]
     jmp .next
 
 .s_loop:
+    push qword [arm_break_head]
+    mov qword [arm_break_head], 0
+
     mov rbx, [r13 + 16]
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_stmt
@@ -928,6 +984,19 @@ arm_emit_stmt:
     mov r8d, 0x14000000
     or eax, r8d
     EMIT_ARM eax
+
+    ; Patch breaks
+    mov rdi, r13
+    call arm_patch_break_list
+    pop qword [arm_break_head]
+    jmp .next
+
+.s_break:
+    mov rax, [r13 + 16]      ; fixup_off
+    mov rsi, [arm_break_head]    ; old head
+    mov rdi, r13
+    call emit_dword          ; placeholder stores old head
+    mov [arm_break_head], rax    ; new head
     jmp .next
 
 .s_asm_block:
