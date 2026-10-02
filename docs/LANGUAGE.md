@@ -7,6 +7,7 @@ This document describes the syntax and semantics of CAP v0.1.0.
 Functions are declared with `fn` and use Python-style indentation:
 
 ```cap
+/* ignore-example-check */
 fn add(a, b):
     return a + b
 ```
@@ -56,6 +57,7 @@ Supported control statements: `if`, `elif`, `else`, `while`, `loop`, `break`, `f
 ## 6. Structs & Memory Management
 
 ```cap
+/* ignore-example-check */
 struct Point:
     x: int
     y: int

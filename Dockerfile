@@ -19,4 +19,6 @@ COPY . .
 
 RUN make clean && make
 
-CMD ["./capc", "--version"]
+ENV PATH="/cap:${PATH}"
+
+CMD ["capc", "--version"]
