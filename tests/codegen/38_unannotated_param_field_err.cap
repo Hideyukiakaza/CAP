@@ -1,0 +1,5 @@
+fn get_x(p):
+    return p.x
+
+fn main():
+    return 0

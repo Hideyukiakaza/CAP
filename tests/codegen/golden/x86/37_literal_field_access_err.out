@@ -1,0 +1,1 @@
+COMPILE_ERROR: TypeError: cannot access field 'x': '10' is not a struct (line 2)

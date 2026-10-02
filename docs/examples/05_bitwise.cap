@@ -1,0 +1,9 @@
+fn main():
+    a = 0b1100
+    b = 0b1010
+    and_val = a & b
+    or_val = a | b
+    xor_val = a ^ b
+    shl_val = a << 2
+    print(f"AND: {and_val}, OR: {or_val}, XOR: {xor_val}, SHL: {shl_val}")
+    return 0

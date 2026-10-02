@@ -37,6 +37,17 @@ Supported memory addressing shapes inside `[...]`:
 - **SREG**: `es, cs, ss, ds, fs, gs`
 - **CR**: `cr0, cr2, cr3, cr4`
 
+## System Instructions & Special Encodings
+- `retfq`: `48 CB` (64-bit far return)
+- `mov cr3, rax`: `0F 22 D8`
+- `mov rax, cr3`: `0F 20 D8`
+- `lgdt [rax]`: `0F 01 /2`
+- `lidt [rax]`: `0F 01 /3`
+- `stosq`: `F3 48 AB` (`REP STOSQ`)
+- `jmp r64`: `48 FF /4`
+- `mov sreg, r16`: `8E /r` (supports `ds`, `es`, `ss`)
+- `push imm8`: `6A <imm8>`
+
 ## Diagnostic Errors
 - Unknown mnemonic: `Error: unknown asm instruction '<mne>'`
 - Invalid operands: `Error: invalid operands for '<mne>'`

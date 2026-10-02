@@ -1,3 +1,17 @@
+; Copyright 2026 Hideyukiakaza
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
 ; src/lexer.asm - Lexer / Tokenizer for CAP v0.1 in NASM x86_64
 default rel
 
@@ -10,7 +24,8 @@ err_mismatch_indent: db "SyntaxError: Unindent does not match any outer indentat
 err_unexpected_char: db "LexerError: Unexpected character", 10, 0
 err_unterm_string: db "LexerError: Unterminated string literal", 10, 0
 err_lexer_malformed_num_1: db "LexerError: malformed numeric literal '", 0
-err_lexer_malformed_num_2: db "' on line ", 0
+err_lexer_malformed_num_2: db "' (line ", 0
+s_close_paren_nl: db ")", 10, 0
 err_newline: db 10, 0
 
 kw_if:     db "if", 0
@@ -35,7 +50,7 @@ kw_range:  db "range", 0
 kw_naked:  db "naked", 0
 
 section .bss
-global lexer_tokens, lexer_token_count, lexer_token_idx
+global lexer_tokens, lexer_token_count, lexer_token_idx, line_num
 lexer_tokens:      resq 1
 lexer_token_count: resq 1
 lexer_token_capacity: resq 1
@@ -715,7 +730,7 @@ lex_number_token:
     call print_err
     mov rdi, [line_num]
     call print_err_num
-    mov rsi, err_newline
+    mov rsi, s_close_paren_nl
     call print_err
 
     mov rdi, 1
@@ -1177,21 +1192,21 @@ lexer_next_token:
     ret
 
 lexer_peek_token:
-    mov rax, [lexer_token_idx]
-    cmp rax, [lexer_token_count]
-    jge .out_of_bounds_peek
     mov r8, [lexer_tokens]
-    imul r9, rax, Token_size
+    test r8, r8
+    jz .out_null
+    mov rax, [lexer_token_count]
+    mov rcx, [lexer_token_idx]
+    cmp rcx, rax
+    jge .out_null
+
+    imul r9, rcx, Token_size
     add r8, r9
     mov rax, r8
     ret
-.out_of_bounds_peek:
-    mov r8, [lexer_tokens]
-    mov rax, [lexer_token_count]
-    dec rax
-    imul r9, rax, Token_size
-    add r8, r9
-    mov rax, r8
+
+.out_null:
+    xor rax, rax
     ret
 
 lexer_rewind:

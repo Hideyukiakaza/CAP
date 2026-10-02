@@ -1,5 +1,35 @@
+; Copyright 2026 Hideyukiakaza
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
 ; src/utils.asm - Helper utilities for CAP frontend in NASM x86_64
 default rel
+
+extern line_num
+
+section .data
+s_err_int_1:  db "LexerError: integer literal '", 0
+s_err_int_2:  db "' out of range", 0
+
+s_err_hex_1:  db "LexerError: hex literal '", 0
+s_err_hex_2:  db "' exceeds 64 bits", 0
+
+s_err_bin_1:  db "LexerError: binary literal '", 0
+s_err_bin_2:  db "' exceeds 64 bits", 0
+
+s_err_line_1: db " (line ", 0
+s_err_line_2: db ")", 10, 0
+s_err_nl:     db 10, 0
 
 section .text
 global sys_exit, sys_write, sys_read, sys_open, sys_close, sys_mmap
@@ -180,20 +210,24 @@ print_num:
     pop rax
     ret
 
-err_num_out_of_range: db "Error: integer literal out of range", 10, 0
 
 parse_dec_int:
     xor rsi, rsi
     jmp parse_int_literal
 
 parse_int_literal:
-    ; rdi = str_ptr, rcx = len, rsi = allow_min_mag (1 if under unary minus, 0 otherwise)
+    ; rdi = str_ptr, rcx = len, rsi = allow_min_mag (1 if under unary minus, 0 otherwise), r8 = explicit_line (0 if none)
     ; Returns uint64/int64 in rax. If out of range, prints error and exits with 1.
+    push rbp
+    mov rbp, rsp
     push rbx
     push r12
     push r13
     push r14
     push r15
+    push r8                  ; explicit_line [rbp - 48]
+    push rdi                 ; orig_str_ptr [rbp - 56]
+    push rcx                 ; orig_len [rbp - 64]
 
     mov r12, rdi             ; str_ptr
     mov r13, rcx             ; len
@@ -316,11 +350,9 @@ parse_int_literal:
     sub cl, '0'
     movzx rcx, cl
 
-    push rdx
     mov rbx, 10
     mul rbx
     test rdx, rdx
-    pop rdx
     jnz .range_err
 
     add rax, rcx
@@ -344,17 +376,82 @@ parse_int_literal:
     je .success
 
 .range_err:
-    mov rsi, err_num_out_of_range
+    mov r12, [rbp - 56]      ; restore orig_str_ptr
+    mov r13, [rbp - 64]      ; restore orig_len
+    cmp r13, 2
+    jl .range_dec
+    mov al, [r12]
+    cmp al, '0'
+    jne .range_dec
+    mov bl, [r12 + 1]
+    cmp bl, 'x'
+    je .range_hex
+    cmp bl, 'X'
+    je .range_hex
+    cmp bl, 'b'
+    je .range_bin
+    cmp bl, 'B'
+    je .range_bin
+
+.range_dec:
+    mov rsi, s_err_int_1
+    call print_err
+    mov rsi, r12
+    mov rdx, r13
+    call print_err_bytes
+    mov rsi, s_err_int_2
+    call print_err
+    jmp .range_print_line
+
+.range_hex:
+    mov rsi, s_err_hex_1
+    call print_err
+    mov rsi, r12
+    mov rdx, r13
+    call print_err_bytes
+    mov rsi, s_err_hex_2
+    call print_err
+    jmp .range_print_line
+
+.range_bin:
+    mov rsi, s_err_bin_1
+    call print_err
+    mov rsi, r12
+    mov rdx, r13
+    call print_err_bytes
+    mov rsi, s_err_bin_2
+    call print_err
+
+.range_print_line:
+    mov rdi, [rbp - 48]      ; explicit_line
+    test rdi, rdi
+    jnz .got_err_line
+    mov rdi, [line_num]
+.got_err_line:
+    test rdi, rdi
+    jz .range_no_line
+    mov rsi, s_err_line_1
+    call print_err
+    call print_err_num
+    mov rsi, s_err_line_2
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.range_no_line:
+    mov rsi, s_err_nl
     call print_err
     mov rdi, 1
     call sys_exit
 
 .success:
+    add rsp, 24              ; clean up push r8, rdi, rcx
     pop r15
     pop r14
     pop r13
     pop r12
     pop rbx
+    pop rbp
     ret
 
 hex_char_to_val:

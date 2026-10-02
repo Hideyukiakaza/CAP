@@ -1,4 +1,5 @@
 /*/ Expected: EXCEPTION: vector=13 err=0x0000000000000000 rip=0x0000800000000000
+/*/ Note: The ret instruction is at 0x100CE5, which pops non-canonical address 0x0000800000000000 into RIP. QEMU's x86_64 CPU exception model records the target non-canonical address (0x0000800000000000) as the faulting RIP on the vector 13 (#GP, err=0) stack frame during branch validation.
 fn main():
     asm:
         mov rax, 0x800000000000

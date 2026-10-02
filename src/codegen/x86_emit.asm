@@ -1,3 +1,17 @@
+; Copyright 2026 Hideyukiakaza
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
 ; src/codegen/x86_emit.asm - x86-64 Machine Code Emitter for CAP v0.1
 default rel
 
@@ -5,7 +19,7 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-err_unsupported_asm: db "Error: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
+err_unsupported_asm: db "SyntaxError: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
 s_print:             db "print", 0
 s_input:             db "input", 0
 s_fstring:           db "fstring", 0
@@ -26,6 +40,7 @@ extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_off
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
 extern print_err, print_err_bytes, sys_exit, str_ncmp, parse_dec_int, parse_int_literal
+extern boot_thin_header
 
 struc X86State
     .code_buf:     resq 1
@@ -72,6 +87,8 @@ x86_emit_program:
     call fn_sym_init
 
     cmp r14, TARGET_FREESTANDING
+    je .emit_freestanding_start
+    cmp r14, TARGET_BOOT_THIN
     je .emit_freestanding_start
     cmp r14, TARGET_NO_BOOT_STUB
     je .emit_functions
@@ -210,6 +227,8 @@ x86_emit_program:
 .done_fns:
     cmp r14, TARGET_NO_BOOT_STUB
     je .no_patch_main
+    cmp r14, TARGET_BOOT_THIN
+    je .patch_boot_thin_main
 
     ; Patch call main in _start (at file offset 1)
     mov rax, [xstate + X86State.fn_main_off]
@@ -218,6 +237,13 @@ x86_emit_program:
     mov rsi, 1
     mov rdx, rax
     call patch_dword
+    jmp .no_patch_main
+
+.patch_boot_thin_main:
+    mov rax, [xstate + X86State.fn_main_off]
+    add rax, 251             ; rel32 = (512 + fn_main_off) - (256 + 5) = 251 + fn_main_off
+    lea rdi, [boot_thin_header]
+    mov dword [rdi + 257], eax
 
 .no_patch_main:
     pop r14
@@ -1464,6 +1490,7 @@ x86_emit_expr:
     jmp .done
 
 .is_int_lit:
+    mov r8, [r12 + ASTNode.line]
     call parse_dec_int
     ; mov rax, imm64
     mov rdi, r13
@@ -1606,6 +1633,8 @@ x86_emit_expr:
     call emit_byte           ; pop rcx (left val)
 
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .skip_type_check
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
     je .skip_type_check
 
     ; Check if left tag (r8) != 1 or right tag (rdx) != 1
@@ -1889,6 +1918,8 @@ x86_emit_expr:
 .op_div:
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
     je .raw_idiv
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
+    je .raw_idiv
 
     ; Check division by zero: test rax, rax (48 85 C0)
     mov rdi, r13
@@ -2014,6 +2045,8 @@ x86_emit_expr:
 
 .op_mod:
     cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .raw_imod
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
     je .raw_imod
 
     ; Check division by zero: test rax, rax (48 85 C0)
@@ -2268,6 +2301,7 @@ x86_emit_expr:
     mov rcx, [r12 + ASTNode.child1]
     mov rcx, [rcx + ASTNode.val_len]
     mov rsi, 1
+    mov r8, [r12 + ASTNode.line]
     call parse_int_literal
 
     ; mov rax, imm64
@@ -2366,6 +2400,48 @@ x86_emit_expr:
     jmp .done
 
 .do_addr:
+    mov rbx, [r12 + ASTNode.child1]
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    call find_fn_symbol
+    cmp rax, -1
+    je .addr_var
+
+    ; Function symbol found! rax = code offset fn_off
+    cmp qword [xstate + X86State.target_mode], TARGET_FREESTANDING
+    je .addr_fn_fs
+    cmp qword [xstate + X86State.target_mode], TARGET_BOOT_THIN
+    je .addr_fn_boot_thin
+    add rax, 0x400078         ; hosted base VA
+    jmp .addr_fn_emit
+.addr_fn_boot_thin:
+    add rax, 0x100200         ; freestanding thin base VA (0x100000 + 512)
+    jmp .addr_fn_emit
+.addr_fn_fs:
+    add rax, 0x100CC6         ; freestanding fat base VA (0x100000 + 3270)
+.addr_fn_emit:
+    ; Emit mov rax, imm64 (48 B8 <8-byte imm64>)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xB8
+    call emit_byte
+    mov rsi, rax              ; imm64 VA
+    call emit_qword
+
+    ; Set tag rdx = 1 (INT)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    jmp .done
+
+.addr_var:
     mov rbx, [r12 + ASTNode.child1]
     mov rdi, [rbx + ASTNode.val]
     mov rsi, [rbx + ASTNode.val_len]
@@ -2949,9 +3025,9 @@ struc AsmTableEntry
 endstruc
 
 section .data
-err_asm_unknown_mne_1: db "Error: unknown asm instruction '", 0
+err_asm_unknown_mne_1: db "SyntaxError: unknown asm instruction '", 0
 err_asm_unknown_mne_2: db "'", 10, 0
-err_asm_invalid_ops_1: db "Error: invalid operands for '", 0
+err_asm_invalid_ops_1: db "SyntaxError: invalid operands for '", 0
 err_asm_invalid_ops_2: db "'", 10, 0
 
 s_reg_rax: db "rax", 0
@@ -3060,6 +3136,10 @@ s_mne_hlt:    db "hlt", 0
 s_mne_nop:    db "nop", 0
 s_mne_ret:    db "ret", 0
 s_mne_syscall:db "syscall", 0
+s_mne_jmp:    db "jmp", 0
+s_mne_stosq:  db "stosq", 0
+s_mne_retfq:  db "retfq", 0
+s_mne_shr:    db "shr", 0
 
 align 8
 reg_table:
@@ -3212,6 +3292,7 @@ asm_table:
 
     ; push / pop
     dq s_mne_push, 4, M_REG64, M_NONE,  0x00, 0x00, 0x50, NO_MODRM,     F_OPCODE_REG_ADD
+    dq s_mne_push, 4, M_IMM,   M_NONE,  0x00, 0x00, 0x6A, NO_MODRM,     F_IMM8
     dq s_mne_pop, 3,  M_REG64, M_NONE,  0x00, 0x00, 0x58, NO_MODRM,     F_OPCODE_REG_ADD
 
     ; in / out
@@ -3237,6 +3318,11 @@ asm_table:
     dq s_mne_nop, 3,  M_NONE, M_NONE,  0x00, 0x00, 0x90, NO_MODRM,     0
     dq s_mne_ret, 3,  M_NONE, M_NONE,  0x00, 0x00, 0xC3, NO_MODRM,     0
     dq s_mne_syscall, 7, M_NONE, M_NONE, 0x0F, 0x05, 0x00, NO_MODRM,    0
+    dq s_mne_jmp, 3,  M_REG64, M_NONE, 0x00, 0x00, 0xFF, 4,            F_REX_W
+    dq s_mne_stosq, 5, M_NONE, M_NONE, 0xF3, 0x00, 0xAB, NO_MODRM,     F_REX_W
+    dq s_mne_retfq, 5, M_NONE, M_NONE, 0x00, 0x00, 0xCB, NO_MODRM,     F_REX_W
+    dq s_mne_shr, 3,   M_REG64, M_IMM,  0x00, 0x00, 0xC1, 5,            F_REX_W | F_IMM8
+    dq s_mne_shr, 3,   M_REG32, M_IMM,  0x00, 0x00, 0xC1, 5,            F_IMM8
     dq 0, 0, 0, 0, 0, 0
 
 section .text
@@ -4044,13 +4130,6 @@ encode_asm_entry:
     or rbx, 2
 
 .emit_pfx:
-    test rbx, rbx
-    jz .do_pfx1_e
-    mov rdi, r12
-    mov sil, bl
-    or sil, 0x40
-    call emit_byte
-
 .do_pfx1_e:
     mov rax, [r13 + AsmTableEntry.pfx1]
     test rax, rax
@@ -4062,9 +4141,17 @@ encode_asm_entry:
 .do_pfx2_e:
     mov rax, [r13 + AsmTableEntry.pfx2]
     test rax, rax
-    jz .do_opcode_e
+    jz .do_rex_e
     mov rdi, r12
     mov sil, al
+    call emit_byte
+
+.do_rex_e:
+    test rbx, rbx
+    jz .do_opcode_e
+    mov rdi, r12
+    mov sil, bl
+    or sil, 0x40
     call emit_byte
 
 .do_opcode_e:

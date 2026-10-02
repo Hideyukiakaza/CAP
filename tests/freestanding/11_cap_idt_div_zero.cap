@@ -1,12 +1,11 @@
-/*/ Expected: EXCEPTION: vector=0 err=0x0 rip=0x0000000000100D00
+/*/ Expected: EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100D56
+/*/ Gate packing formula: see spec/runtime.md
 /*/ lgdt is omitted here because the freestanding boot stub GDT is already active with selectors 0x08 (code) and 0x10 (data).
 fn main():
     asm:
         mov rdi, 0x100500
-        mov rax, 0x00080C37
+        mov rax, 0x00108E0000080200
         mov [rdi], rax
-        mov rax, 0x00108E00
-        mov [rdi + 4], rax
         mov rax, 0
         mov [rdi + 8], rax
 

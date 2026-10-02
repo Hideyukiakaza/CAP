@@ -1,3 +1,17 @@
+; Copyright 2026 Hideyukiakaza
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
 ; src/codegen/codegen.asm - Code Generator Driver & Buffer Utilities for CAP v0.1
 default rel
 
@@ -11,32 +25,34 @@ struc CodeBuf
 endstruc
 
 section .data
-err_no_main: db "Error: main function not found", 10, 0
+err_no_main: db "NameError: main function not found", 10, 0
 s_main_name: db "main", 0
 
 err_name_undef_var_1: db "NameError: undefined name '", 0
-err_name_undef_var_2: db "'", 10, 0
+err_name_undef_var_2: db "'", 0
 
 err_name_undef_fn_1: db "NameError: undefined function '", 0
-err_name_undef_fn_2: db "'", 10, 0
+err_name_undef_fn_2: db "'", 0
 
 err_type_not_struct_1: db "TypeError: cannot access field '", 0
 err_type_not_struct_2: db "': '", 0
 err_type_not_struct_3: db "' is not a struct", 0
 err_type_not_struct_param_hint: db " (struct parameters need an annotation, e.g. p: Point)", 0
+s_line_prefix: db " (line ", 0
+s_line_suffix: db ")", 0
 err_newline_cg: db 10, 0
 
 err_type_no_such_field_1: db "TypeError: struct '", 0
 err_type_no_such_field_2: db "' has no field '", 0
-err_type_no_such_field_3: db "'", 10, 0
+err_type_no_such_field_3: db "'", 0
 
 err_freestanding_prim_1: db "'", 0
-err_freestanding_prim_2: db "' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 10, 0
+err_freestanding_prim_2: db "' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O", 0
 
-err_naked_return: db "Error: return not allowed in naked function", 10, 0
-err_naked_var:    db "Error: variable declaration not allowed in naked function", 10, 0
-err_naked_alloc:  db "Error: alloc not allowed in naked function", 10, 0
-err_naked_defer:  db "Error: defer not allowed in naked function", 10, 0
+err_naked_return: db "SyntaxError: return not allowed in naked function", 0
+err_naked_var:    db "SyntaxError: variable declaration not allowed in naked function", 0
+err_naked_alloc:  db "SyntaxError: alloc not allowed in naked function", 0
+err_naked_defer:  db "SyntaxError: defer not allowed in naked function", 0
 
 s_builtin_print:    db "print", 0
 s_builtin_input:    db "input", 0
@@ -52,7 +68,34 @@ global find_symbol_offset, add_symbol, add_symbol_type, find_symbol_entry
 global find_struct_decl, find_struct_field, resolve_field_access
 global fn_sym_init, add_fn_symbol, find_fn_symbol
 
-extern malloc_bytes, str_ncmp, str_len, print_err, print_err_bytes, sys_exit
+extern malloc_bytes, str_ncmp, str_len, print_err, print_err_bytes, print_err_num, sys_exit
+
+print_node_line_suffix:
+    push rbp
+    mov rbp, rsp
+    push rdi
+    push rsi
+
+    test rdi, rdi
+    jz .p_line_done
+
+    mov rdi, [rdi + ASTNode.line]
+    test rdi, rdi
+    jz .p_line_done
+
+    push rdi
+    mov rsi, s_line_prefix
+    call print_err
+    pop rdi
+    call print_err_num
+    mov rsi, s_line_suffix
+    call print_err
+
+.p_line_done:
+    pop rsi
+    pop rdi
+    pop rbp
+    ret
 extern write_elf64_binary
 extern x86_emit_program, arm_emit_program
 
@@ -534,6 +577,10 @@ semantic_check_stmt:
     jne .do_assign_chk
     mov rsi, err_naked_var
     call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
     mov rdi, 1
     call sys_exit
 
@@ -571,6 +618,10 @@ semantic_check_stmt:
     cmp qword [in_naked_fn], 1
     jne .do_fassign_chk
     mov rsi, err_naked_var
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
     call print_err
     mov rdi, 1
     call sys_exit
@@ -650,6 +701,10 @@ semantic_check_stmt:
     jne .do_defer_chk
     mov rsi, err_naked_defer
     call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
     mov rdi, 1
     call sys_exit
 
@@ -665,6 +720,10 @@ semantic_check_stmt:
     cmp qword [r13 + ASTNode.child1], 0
     je .do_ret_chk
     mov rsi, err_naked_return
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
     call print_err
     mov rdi, 1
     call sys_exit
@@ -742,6 +801,13 @@ semantic_check_expr:
     test rax, rax
     jnz .expr_done
 
+    mov rdi, r12
+    mov rsi, [r13 + ASTNode.val]
+    mov rdx, [r13 + ASTNode.val_len]
+    call find_fn_decl_in_ast
+    test rax, rax
+    jnz .expr_done
+
     mov rsi, err_name_undef_var_1
     call print_err
     mov rsi, [r13 + ASTNode.val]
@@ -749,12 +815,19 @@ semantic_check_expr:
     call print_err_bytes
     mov rsi, err_name_undef_var_2
     call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
     mov rdi, 1
     call sys_exit
 
 .e_call:
     cmp qword [cg_target_arch], TARGET_FREESTANDING
+    je .do_fs_chk
+    cmp qword [cg_target_arch], TARGET_BOOT_THIN
     jne .chk_builtin
+.do_fs_chk:
 
     mov rdi, [r13 + ASTNode.val]
     mov rdx, [r13 + ASTNode.val_len]
@@ -768,6 +841,10 @@ semantic_check_expr:
     mov rdx, [r13 + ASTNode.val_len]
     call print_err_bytes
     mov rsi, err_freestanding_prim_2
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
     call print_err
     mov rdi, 1
     call sys_exit
@@ -792,6 +869,10 @@ semantic_check_expr:
     mov rdx, [r13 + ASTNode.val_len]
     call print_err_bytes
     mov rsi, err_name_undef_fn_2
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
     call print_err
     mov rdi, 1
     call sys_exit
@@ -854,6 +935,8 @@ semantic_check_expr:
     call print_err
 
 .print_type_nl:
+    mov rdi, r13
+    call print_node_line_suffix
     mov rsi, err_newline_cg
     call print_err
     mov rdi, 1
@@ -886,6 +969,10 @@ semantic_check_expr:
     call print_err_bytes
     mov rsi, err_type_no_such_field_3
     call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
     mov rdi, 1
     call sys_exit
 
@@ -902,6 +989,8 @@ semantic_check_expr:
     call print_err_bytes
     mov rsi, err_type_not_struct_3
     call print_err
+    mov rdi, r13
+    call print_node_line_suffix
     mov rsi, err_newline_cg
     call print_err
     mov rdi, 1
@@ -937,6 +1026,10 @@ semantic_check_expr:
     cmp qword [in_naked_fn], 1
     jne .do_alloc_chk
     mov rsi, err_naked_alloc
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
     call print_err
     mov rdi, 1
     call sys_exit
@@ -1081,10 +1174,12 @@ find_fn_decl_in_ast:
     cmp rdx, r13
     jne .f_ast_next
 
+    push r12
     mov rdi, r12
     mov rsi, [rbx + ASTNode.val]
     mov rdx, r13
     call str_ncmp
+    pop r12
     test rax, rax
     jz .f_ast_found
 
@@ -1418,10 +1513,12 @@ find_fn_symbol:
     cmp rdx, r13
     jne .fn_search_loop
 
+    push r12
     mov rdi, r12
     mov rsi, [rax]
     mov rdx, r13
     call str_ncmp
+    pop r12
     test rax, rax
     jnz .fn_search_loop
 

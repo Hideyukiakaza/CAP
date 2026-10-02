@@ -1,0 +1,6 @@
+fn main():
+    asm:
+        mov dx, 0x3F8
+        mov al, 0x48
+        out dx, al
+    return 0

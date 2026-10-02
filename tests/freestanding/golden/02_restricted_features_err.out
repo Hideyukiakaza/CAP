@@ -1,4 +1,4 @@
 EXIT: 1
 STDOUT:
 STDERR:
-'print' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O
+'print' requires a hosted target; freestanding mode has no OS to call into — use asm: or raw pointer MMIO for hardware I/O (line 2)

@@ -2,4 +2,4 @@ EXIT: 1
 STDOUT:
 
 STDERR:
-LexerError: malformed numeric literal '1__0' on line 1
+LexerError: malformed numeric literal '1__0' (line 1)

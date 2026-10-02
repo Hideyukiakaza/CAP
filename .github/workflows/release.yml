@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm binutils make qemu-system-x86 qemu-user zip
+
+      - name: Print Dependency Versions
+        run: |
+          nasm --version
+          ld --version
+          qemu-system-x86_64 --version
+
+      - name: Clean and Build
+        run: |
+          make clean
+          make
+
+      - name: Run Test Suites
+        run: |
+          ./tests/frontend/run_tests.sh
+          ./tests/codegen/run_tests.sh
+          ./tests/freestanding/run_tests.sh
+          ./tests/docs/run_tests.sh
+          ./tests/cli/run_tests.sh
+
+      - name: Prepare Release Artifacts
+        run: |
+          cp capc capc-linux-x86_64
+          sha256sum capc-linux-x86_64 > SHA256SUMS
+          zip -r cap-docs-spec.zip docs spec
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            capc-linux-x86_64
+            SHA256SUMS
+            cap-docs-spec.zip
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

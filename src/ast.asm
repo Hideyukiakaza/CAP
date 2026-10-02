@@ -1,6 +1,21 @@
+; Copyright 2026 Hideyukiakaza
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
 ; src/ast.asm - AST Node allocation and formatting/printing for CAP v0.1
 default rel
 
+%include "src/tokens.inc"
 %include "src/ast.inc"
 
 section .data
@@ -42,21 +57,53 @@ s_newline:     db 10, 0
 
 section .text
 global create_ast_node, dump_ast
-extern malloc_bytes, print_str, sys_write
+extern malloc_bytes, print_str, sys_write, line_num, lexer_peek_token
 
 create_ast_node:
+    push rbx
+    push r12
+    push rcx
+    push rdx
+    push rsi
     push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    mov r12, rdi
+
     mov rdi, ASTNode_size
     call malloc_bytes
+    mov rbx, rax
+
+    mov [rbx + ASTNode.type], r12
+    mov qword [rbx + ASTNode.val], 0
+    mov qword [rbx + ASTNode.val_len], 0
+    mov qword [rbx + ASTNode.child1], 0
+    mov qword [rbx + ASTNode.child2], 0
+    mov qword [rbx + ASTNode.child3], 0
+    mov qword [rbx + ASTNode.next], 0
+    mov qword [rbx + ASTNode.extra], 0
+    mov qword [rbx + ASTNode.line], 0
+
+    call lexer_peek_token
+    test rax, rax
+    jz .no_tok
+    mov rcx, [rax + Token.line]
+    mov [rbx + ASTNode.line], rcx
+
+.no_tok:
+    mov rax, rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
     pop rdi
-    mov [rax + ASTNode.type], rdi
-    mov qword [rax + ASTNode.val], 0
-    mov qword [rax + ASTNode.val_len], 0
-    mov qword [rax + ASTNode.child1], 0
-    mov qword [rax + ASTNode.child2], 0
-    mov qword [rax + ASTNode.child3], 0
-    mov qword [rax + ASTNode.next], 0
-    mov qword [rax + ASTNode.extra], 0
+    pop rsi
+    pop rdx
+    pop rcx
+    pop r12
+    pop rbx
     ret
 
 dump_ast:

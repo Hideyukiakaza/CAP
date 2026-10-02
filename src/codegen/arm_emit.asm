@@ -1,3 +1,17 @@
+; Copyright 2026 Hideyukiakaza
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
 ; src/codegen/arm_emit.asm - ARM64 Machine Code Emitter for CAP v0.1
 default rel
 
@@ -5,7 +19,7 @@ default rel
 %include "src/codegen/target.inc"
 
 section .data
-err_unsupported_arm_asm: db "Error: asm block contains unsupported ARM instruction. Supported instructions: mov, add, sub, svc, ret", 10, 0
+err_unsupported_arm_asm: db "SyntaxError: asm block contains unsupported ARM instruction. Supported instructions: mov, add, sub, svc, ret", 10, 0
 s_main_arm:              db "main", 0
 s_print_arm:             db "print", 0
 s_input_arm:             db "input", 0
@@ -971,6 +985,7 @@ arm_emit_expr:
 
 .is_int_lit_arm:
     xor rsi, rsi
+    mov r8, [r12 + ASTNode.line]
     call parse_int_literal
     mov rbx, rax
 
@@ -1302,6 +1317,8 @@ arm_emit_expr:
     mov cl, [rbx]
     cmp cl, '~'
     je .op_bnot_arm
+    cmp cl, '&'
+    je .do_addr_arm
     cmp cl, '-'
     jne .normal_un_op_arm
 
@@ -1322,6 +1339,7 @@ arm_emit_expr:
     mov rcx, [r12 + ASTNode.child1]
     mov rcx, [rcx + ASTNode.val_len]
     mov rsi, 1
+    mov r8, [r12 + ASTNode.line]
     call parse_int_literal
 
     and eax, 0xFFFF
@@ -1332,6 +1350,53 @@ arm_emit_expr:
     mov eax, 0xD2800021
     EMIT_ARM eax
     EMIT_ARM 0xCB0003E0
+    jmp .done
+
+.do_addr_arm:
+    mov rbx, [r12 + ASTNode.child1]
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    call find_fn_symbol
+    cmp rax, -1
+    je .addr_var_arm
+
+    ; Function symbol found! rax = fn_off
+    add rax, 0x400078         ; hosted base VA
+    mov rbx, rax
+
+    ; mov x0, imm (lower 16) -> movz x0, imm16
+    mov eax, ebx
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xD2800000
+    EMIT_ARM eax
+
+    ; mov x0, imm (upper 16) -> movk x0, imm16, lsl #16
+    mov rax, rbx
+    shr rax, 16
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xF2A00000
+    EMIT_ARM eax
+
+    ; mov x1, #1 (INT tag = 1) -> 0xD2800021
+    EMIT_ARM 0xD2800021
+    jmp .done
+
+.addr_var_arm:
+    mov rbx, [r12 + ASTNode.child1]
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    call find_symbol_offset
+    neg rax
+    and eax, 0xFFF
+    shl eax, 10
+    mov r8d, 0xD10003A0
+    or eax, r8d
+    EMIT_ARM eax
+
+    ; mov x1, #1 (INT tag = 1) -> 0xD2800021
+    EMIT_ARM 0xD2800021
     jmp .done
 
 .op_bnot_arm:

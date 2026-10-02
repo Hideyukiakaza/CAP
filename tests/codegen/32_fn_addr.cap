@@ -1,0 +1,6 @@
+fn f():
+    return 0
+
+fn main():
+    print(&f)
+    return 0

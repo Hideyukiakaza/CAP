@@ -1,0 +1,1 @@
+COMPILE_ERROR: TypeError: cannot access field 'x': 'p' is not a struct (struct parameters need an annotation, e.g. p: Point) (line 2)

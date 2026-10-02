@@ -1,0 +1,7 @@
+fn main():
+    x = 10
+    if x > 5:
+        print("Greater than 5")
+    else:
+        print("Less or equal")
+    return 0

@@ -17,11 +17,16 @@ run_one() {
     local bin_fs="/tmp/cap_test_${base}_fs"
     local stdout_fs stderr_fs exit_fs actual_fs compile_status
 
-    "$CAPC" --freestanding -o "$bin_fs" "$src" 2>/tmp/cap_test_stderr
+    local extra_flags=""
+    if [ "$base" = "17_boot_thin" ] || [ "$base" = "18_thin_exception" ]; then
+        extra_flags="--boot-thin"
+    fi
+
+    "$CAPC" --freestanding $extra_flags -o "$bin_fs" "$src" 2>/tmp/cap_test_stderr
     compile_status=$?
 
     if [ $compile_status -ne 0 ]; then
-        stderr_fs="$(cat /tmp/cap_test_stderr | sed -E 's/pid [0-9]+/pid PID/g')"
+        stderr_fs="$(cat /tmp/cap_test_stderr | sed -E 's/pid [0-9]+/pid PID/g; /terminating on signal .* \(timeout\)/d')"
         actual_fs="$(cat <<EOF
 EXIT: $compile_status
 STDOUT:
@@ -30,9 +35,9 @@ $stderr_fs
 EOF
 )"
     else
-        stdout_fs="$(timeout -s KILL 10 qemu-system-x86_64 -kernel "$bin_fs" -serial stdio -display none -no-reboot 2>/tmp/cap_test_stderr)"
+        stdout_fs="$(timeout 10 qemu-system-x86_64 -kernel "$bin_fs" -serial stdio -display none -no-reboot 2>/tmp/cap_test_stderr)"
         exit_fs=$?
-        stderr_fs="$(cat /tmp/cap_test_stderr | sed -E 's/pid [0-9]+/pid PID/g')"
+        stderr_fs="$(cat /tmp/cap_test_stderr | sed -E 's/pid [0-9]+/pid PID/g; /terminating on signal .* \(timeout\)/d')"
         actual_fs="$(cat <<EOF
 EXIT: $exit_fs
 STDOUT:

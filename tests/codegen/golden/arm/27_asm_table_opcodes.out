@@ -1,1 +1,1 @@
-COMPILE_ERROR: Error: asm block contains unsupported ARM instruction. Supported instructions: mov, add, sub, svc, ret
+COMPILE_ERROR: SyntaxError: asm block contains unsupported ARM instruction. Supported instructions: mov, add, sub, svc, ret
