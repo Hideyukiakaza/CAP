@@ -1,0 +1,2 @@
+COMPILE_ERROR: NameError: undefined name 'x' (line 4)
+top-level variables are not visible inside functions; pass 'x' as a parameter

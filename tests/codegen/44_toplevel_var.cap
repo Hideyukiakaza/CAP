@@ -1,0 +1,6 @@
+x = 10
+
+fn foo():
+    print(x)
+
+foo()

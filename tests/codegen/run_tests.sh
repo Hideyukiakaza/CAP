@@ -21,7 +21,11 @@ run_one() {
     # --- x86-64 Target ---
     local bin_x86="/tmp/cap_test_${base}_x86"
     local stdout_x86 stderr_x86 exit_x86 actual_x86 x86_compile_status
-    "$CAPC" -o "$bin_x86" "$src" 2>/tmp/cap_test_stderr_x86
+    if [ "$base" = "48_freestanding_no_main" ]; then
+        "$CAPC" --freestanding -o "$bin_x86" "$src" 2>/tmp/cap_test_stderr_x86
+    else
+        "$CAPC" -o "$bin_x86" "$src" 2>/tmp/cap_test_stderr_x86
+    fi
     x86_compile_status=$?
     if [ $x86_compile_status -ne 0 ]; then
         actual_x86="COMPILE_ERROR: $(cat /tmp/cap_test_stderr_x86)"
@@ -65,6 +69,9 @@ EOF
         "$CAPC" -a -o "$bin_arm" "$arm_src" 2>/tmp/cap_test_stderr_arm
         arm_compile_status=$?
         rm -f "$arm_src"
+    elif [ "$base" = "48_freestanding_no_main" ]; then
+        "$CAPC" --freestanding -a -o "$bin_arm" "$src" 2>/tmp/cap_test_stderr_arm
+        arm_compile_status=$?
     else
         "$CAPC" -a -o "$bin_arm" "$src" 2>/tmp/cap_test_stderr_arm
         arm_compile_status=$?
