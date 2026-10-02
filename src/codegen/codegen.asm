@@ -27,6 +27,10 @@ endstruc
 section .data
 err_no_main: db "NameError: main function not found", 10, 0
 s_main_name: db "main", 0
+s_zero_str: db "0", 0
+err_mix_top_main_1: db "SyntaxError: top-level statements cannot be mixed with 'fn main()'", 0
+err_toplevel_var_hint: db "top-level variables are not visible inside functions; pass '", 0
+err_toplevel_var_hint2: db "' as a parameter", 10, 0
 
 err_name_undef_var_1: db "NameError: undefined name '", 0
 err_name_undef_var_2: db "'", 0
@@ -68,7 +72,7 @@ global find_symbol_offset, add_symbol, add_symbol_type, find_symbol_entry
 global find_struct_decl, find_struct_field, resolve_field_access
 global fn_sym_init, add_fn_symbol, find_fn_symbol
 
-extern malloc_bytes, str_ncmp, str_len, print_err, print_err_bytes, print_err_num, sys_exit
+extern malloc_bytes, str_ncmp, str_len, print_err, print_err_bytes, print_err_num, sys_exit, create_ast_node
 
 print_node_line_suffix:
     push rbp
@@ -198,14 +202,20 @@ compile_program:
     mov r14, rdx             ; output_filename
     mov [cg_target_arch], r13
 
-    ; Check if main function exists in AST
+    ; Check if target is hosted (x86_64 or ARM64)
+    cmp r13, TARGET_X86_64
+    je .do_hosted_desugar
+    cmp r13, TARGET_ARM64
+    je .do_hosted_desugar
+
+    ; Freestanding path: check main exists directly
     mov rbx, [r12 + ASTNode.child1]
-.find_main_loop:
+.fs_find_main_loop:
     test rbx, rbx
     jz .no_main_err
 
     cmp qword [rbx + ASTNode.type], AST_FN_DECL
-    jne .next_stmt
+    jne .fs_next_stmt
 
     mov rdi, [rbx + ASTNode.val]
     mov rsi, s_main_name
@@ -214,9 +224,13 @@ compile_program:
     test rax, rax
     jz .found_main
 
-.next_stmt:
+.fs_next_stmt:
     mov rbx, [rbx + ASTNode.next]
-    jmp .find_main_loop
+    jmp .fs_find_main_loop
+
+.do_hosted_desugar:
+    mov rdi, r12
+    call desugar_hosted_program
 
 .found_main:
     ; Create CodeBuf
@@ -266,6 +280,303 @@ compile_program:
     call print_err
     mov rdi, 1
     call sys_exit
+
+add_top_level_var:
+    push rbx
+    mov rbx, [top_level_vars_count]
+    imul rbx, 16
+    lea rax, [top_level_vars_buf + rbx]
+    mov [rax], rdi
+    mov [rax + 8], rsi
+    inc qword [top_level_vars_count]
+    pop rbx
+    ret
+
+find_top_level_var:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+
+    mov r12, rdi             ; search ptr
+    mov r13, rsi             ; search len
+    mov rbx, [top_level_vars_count]
+
+.search_tv_loop:
+    test rbx, rbx
+    jz .not_found_tv
+    dec rbx
+
+    mov r14, rbx
+    imul r14, 16
+    lea rax, [top_level_vars_buf + r14]
+
+    mov rdx, [rax + 8]
+    cmp rdx, r13
+    jne .search_tv_loop
+
+    mov rdi, r12
+    mov rsi, [rax]
+    mov rdx, r13
+    call str_ncmp
+    test rax, rax
+    jnz .search_tv_loop
+
+    mov rax, 1
+    jmp .done_tv
+
+.not_found_tv:
+    xor rax, rax
+
+.done_tv:
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+desugar_hosted_program:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi                     ; ast_root
+    mov qword [top_level_vars_count], 0
+
+    ; Step 1: Scan top-level statements
+    mov rbx, [r12 + ASTNode.child1]
+    xor r13, r13                     ; has_main = 0
+    xor r14, r14                     ; first_non_decl = NULL
+    xor r15, r15                     ; has_non_decl = 0
+
+.scan_top_loop:
+    test rbx, rbx
+    jz .scan_top_done
+
+    cmp qword [rbx + ASTNode.type], AST_FN_DECL
+    jne .chk_struct_decl
+
+    ; Check if fn name is "main"
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, s_main_name
+    mov rdx, [rbx + ASTNode.val_len]
+    cmp rdx, 4
+    jne .scan_next
+    call str_ncmp
+    test rax, rax
+    jnz .scan_next
+    mov r13, 1                       ; has_main = 1
+    jmp .scan_next
+
+.chk_struct_decl:
+    cmp qword [rbx + ASTNode.type], AST_STRUCT_DECL
+    je .scan_next
+
+    ; It's a non-declaration top-level statement!
+    mov r15, 1                       ; has_non_decl = 1
+    test r14, r14
+    jnz .scan_next
+    mov r14, rbx                     ; first_non_decl = rbx
+
+.scan_next:
+    mov rbx, [rbx + ASTNode.next]
+    jmp .scan_top_loop
+
+.scan_top_done:
+    ; Condition 1: explicit main AND top-level statements exist
+    test r13, r13
+    jz .chk_no_main
+    test r15, r15
+    jz .synthesize_returns            ; explicit main with no top-level stmts -> proceed to returns synthesis
+
+    ; SyntaxError: top-level statements cannot be mixed with 'fn main()' (line N)
+    mov rsi, err_mix_top_main_1
+    call print_err
+    mov rdi, r14
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.chk_no_main:
+    ; Condition 2: no main AND no top-level non-decl stmts
+    test r15, r15
+    jnz .do_synthesize_main
+
+    ; Rejects with NameError: main function not found
+    mov rsi, err_no_main
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.do_synthesize_main:
+    ; Synthesize main AST_FN_DECL node
+    mov rdi, AST_FN_DECL
+    call create_ast_node
+    mov r15, rax                     ; r15 = synth_main
+    mov qword [r15 + ASTNode.val], s_main_name
+    mov qword [r15 + ASTNode.val_len], 4
+    mov qword [r15 + ASTNode.child1], 0
+    mov qword [r15 + ASTNode.extra], 0
+    mov rcx, [r14 + ASTNode.line]
+    mov [r15 + ASTNode.line], rcx
+
+    ; Partition top-level statements
+    mov rbx, [r12 + ASTNode.child1]
+    xor r13, r13                     ; decl_head
+    xor r14, r14                     ; decl_tail
+    push r10
+    push r11
+    xor r10, r10                     ; body_head
+    xor r11, r11                     ; body_tail
+
+.partition_loop:
+    test rbx, rbx
+    jz .partition_done
+
+    mov rcx, [rbx + ASTNode.next]
+    mov qword [rbx + ASTNode.next], 0
+
+    cmp qword [rbx + ASTNode.type], AST_FN_DECL
+    je .is_decl_node
+    cmp qword [rbx + ASTNode.type], AST_STRUCT_DECL
+    je .is_decl_node
+
+    ; Append to body
+    test r11, r11
+    jnz .app_body_node
+    mov r10, rbx
+    mov r11, rbx
+    jmp .chk_top_var_reg
+.app_body_node:
+    mov [r11 + ASTNode.next], rbx
+    mov r11, rbx
+
+.chk_top_var_reg:
+    cmp qword [rbx + ASTNode.type], AST_VAR_DECL
+    jne .chk_for_var_reg
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    test rdi, rdi
+    jz .part_next
+    call add_top_level_var
+    jmp .part_next
+
+.chk_for_var_reg:
+    cmp qword [rbx + ASTNode.type], AST_FOR
+    jne .part_next
+    mov rdi, [rbx + ASTNode.val]
+    mov rsi, [rbx + ASTNode.val_len]
+    test rdi, rdi
+    jz .part_next
+    call add_top_level_var
+    jmp .part_next
+
+.is_decl_node:
+    test r14, r14
+    jnz .app_decl_node
+    mov r13, rbx
+    mov r14, rbx
+    jmp .part_next
+.app_decl_node:
+    mov [r14 + ASTNode.next], rbx
+    mov r14, rbx
+
+.part_next:
+    mov rbx, rcx
+    jmp .partition_loop
+
+.partition_done:
+    mov [r15 + ASTNode.child2], r10
+
+    test r14, r14
+    jnz .app_synth_main_decl
+    mov r13, r15
+    jmp .upd_ast_root
+.app_synth_main_decl:
+    mov [r14 + ASTNode.next], r15
+
+.upd_ast_root:
+    mov [r12 + ASTNode.child1], r13
+    pop r11
+    pop r10
+
+.synthesize_returns:
+    ; Synthesize return 0 for all non-naked hosted functions
+    mov rbx, [r12 + ASTNode.child1]
+
+.ret_fn_loop:
+    test rbx, rbx
+    jz .desugar_done
+
+    cmp qword [rbx + ASTNode.type], AST_FN_DECL
+    jne .ret_fn_next
+
+    cmp qword [rbx + ASTNode.extra], 1
+    je .ret_fn_next                  ; naked fn -> no synthesized return
+
+    mov r13, [rbx + ASTNode.child2]  ; body head
+    test r13, r13
+    jz .append_ret_zero
+
+.find_last_stmt:
+    mov r14, [r13 + ASTNode.next]
+    test r14, r14
+    jz .chk_last_stmt
+    mov r13, r14
+    jmp .find_last_stmt
+
+.chk_last_stmt:
+    cmp qword [r13 + ASTNode.type], AST_RETURN
+    je .ret_fn_next                  ; body already ends in return
+
+.append_ret_zero:
+    mov rdi, AST_LITERAL
+    call create_ast_node
+    mov r15, rax
+    mov qword [r15 + ASTNode.val], s_zero_str
+    mov qword [r15 + ASTNode.val_len], 1
+
+    mov rdi, AST_RETURN
+    call create_ast_node
+    mov [rax + ASTNode.child1], r15
+
+    mov r13, [rbx + ASTNode.child2]
+    test r13, r13
+    jnz .app_ret_to_last
+    mov [rbx + ASTNode.child2], rax
+    jmp .ret_fn_next
+
+.app_ret_to_last:
+.find_last_again:
+    mov r14, [r13 + ASTNode.next]
+    test r14, r14
+    jz .do_app_ret
+    mov r13, r14
+    jmp .find_last_again
+.do_app_ret:
+    mov [r13 + ASTNode.next], rax
+
+.ret_fn_next:
+    mov rbx, [rbx + ASTNode.next]
+    jmp .ret_fn_loop
+
+.desugar_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
 
 
 ; Pre-pass for Struct Declarations
@@ -349,6 +660,9 @@ local_sym_buf: resb 8192
 local_sym_count: resq 1
 cg_target_arch: resq 1
 in_naked_fn: resq 1
+
+top_level_vars_buf: resb 8192
+top_level_vars_count: resq 1
 
 section .text
 global semantic_check_program
@@ -808,6 +1122,37 @@ semantic_check_expr:
     test rax, rax
     jnz .expr_done
 
+    ; Identifier undefined in current scope! Check if it exists in top_level_vars_buf
+    mov rdi, [r13 + ASTNode.val]
+    mov rsi, [r13 + ASTNode.val_len]
+    call find_top_level_var
+    test rax, rax
+    jz .std_undef_var_err
+
+    ; Name exists as top-level variable -> emit NameError + hint
+    mov rsi, err_name_undef_var_1
+    call print_err
+    mov rsi, [r13 + ASTNode.val]
+    mov rdx, [r13 + ASTNode.val_len]
+    call print_err_bytes
+    mov rsi, err_name_undef_var_2
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
+
+    mov rsi, err_toplevel_var_hint
+    call print_err
+    mov rsi, [r13 + ASTNode.val]
+    mov rdx, [r13 + ASTNode.val_len]
+    call print_err_bytes
+    mov rsi, err_toplevel_var_hint2
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.std_undef_var_err:
     mov rsi, err_name_undef_var_1
     call print_err
     mov rsi, [r13 + ASTNode.val]

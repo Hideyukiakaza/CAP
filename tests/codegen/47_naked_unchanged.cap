@@ -1,0 +1,7 @@
+naked fn helper():
+    asm:
+        ret
+
+fn main():
+    helper()
+    return 0

@@ -54,6 +54,9 @@ endstruc
 
 section .bss
 armstate: resb ArmState_size
+arm_defer_nodes: resq 256
+arm_defer_count: resq 1
+arm_is_main_fn: resq 1
 
 section .text
 
@@ -194,6 +197,9 @@ arm_emit_fn:
     push r14
     push r15
 
+    mov qword [arm_defer_count], 0
+    mov qword [arm_is_main_fn], 0
+
     mov r12, rdi             ; fn AST node
     mov r13, [armstate + ArmState.code_buf]
 
@@ -208,9 +214,12 @@ arm_emit_fn:
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_main_arm
     mov rdx, [r12 + ASTNode.val_len]
+    cmp rdx, 4
+    jne .not_main
     call str_ncmp
     test rax, rax
     jnz .not_main
+    mov qword [arm_is_main_fn], 1
     mov rax, [r13 + 16]
     mov [armstate + ArmState.fn_main_off], rax
 .not_main:
@@ -325,6 +334,21 @@ arm_emit_fn:
     mov rdi, [r12 + ASTNode.child2]
     call arm_emit_stmt
 
+    cmp qword [arm_is_main_fn], 1
+    jne .epilogue_no_defer
+
+    mov rbx, [arm_defer_count]
+.fn_falloff_unwind_loop:
+    test rbx, rbx
+    jz .epilogue_no_defer
+    dec rbx
+    mov rdi, [arm_defer_nodes + rbx * 8]
+    push rbx
+    call arm_emit_stmt
+    pop rbx
+    jmp .fn_falloff_unwind_loop
+
+.epilogue_no_defer:
     ; Epilogue:
     ; mov x0, #0
     EMIT_ARM 0xD2800000
@@ -368,6 +392,8 @@ arm_emit_stmt:
     je .s_var_decl
     cmp rax, AST_FIELD_ASSIGN
     je .s_var_field_assign
+    cmp rax, AST_DEFER
+    je .s_defer
     cmp rax, AST_RETURN
     je .s_return
     cmp rax, AST_IF
@@ -389,6 +415,15 @@ arm_emit_stmt:
 .s_block:
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_stmt
+    jmp .next
+
+.s_defer:
+    cmp qword [arm_is_main_fn], 1
+    jne .next
+    mov rcx, [arm_defer_count]
+    mov rax, [r12 + ASTNode.child1]
+    mov [arm_defer_nodes + rcx * 8], rax
+    inc qword [arm_defer_count]
     jmp .next
 
 .s_var_decl:
@@ -590,8 +625,35 @@ arm_emit_stmt:
 .s_return:
     mov rdi, [r12 + ASTNode.child1]
     test rdi, rdi
-    jz .ret_epilogue
+    jz .ret_no_expr
     call arm_emit_expr
+    jmp .ret_unwind
+
+.ret_no_expr:
+    ; mov x0, #0
+    EMIT_ARM 0xD2800000
+
+.ret_unwind:
+    cmp qword [arm_is_main_fn], 1
+    jne .ret_epilogue
+
+    ; str x0, [sp, #-16]! -> push x0
+    EMIT_ARM 0xF81F0FE0
+
+    mov rbx, [arm_defer_count]
+.ret_unwind_loop:
+    test rbx, rbx
+    jz .ret_unwind_done
+    dec rbx
+    mov rdi, [arm_defer_nodes + rbx * 8]
+    push rbx
+    call arm_emit_stmt
+    pop rbx
+    jmp .ret_unwind_loop
+
+.ret_unwind_done:
+    ; ldr x0, [sp], #16 -> pop x0
+    EMIT_ARM 0xF84107E0
 
 .ret_epilogue:
     ; add sp, sp, #512 -> 0x910803FF

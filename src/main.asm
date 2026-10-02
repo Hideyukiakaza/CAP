@@ -102,6 +102,12 @@ _start:
     call str_cmp
     test rax, rax
     jnz .chk_k
+    cmp qword [target_arch], TARGET_FREESTANDING
+    je .parse_args_loop
+    cmp qword [target_arch], TARGET_NO_BOOT_STUB
+    je .parse_args_loop
+    cmp qword [target_arch], TARGET_BOOT_THIN
+    je .parse_args_loop
     mov qword [target_arch], TARGET_ARM64
     jmp .parse_args_loop
 
