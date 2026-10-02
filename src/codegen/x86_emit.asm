@@ -1648,8 +1648,8 @@ x86_emit_expr:
     call emit_byte            ; cmp r8, 1
     mov sil, 0x75
     call emit_byte
-    mov sil, 0x0F
-    call emit_byte            ; jne +15 (trap)
+    mov sil, 0x06
+    call emit_byte            ; jne +6 (to trap call)
 
     mov sil, 0x48
     call emit_byte

@@ -1,0 +1,6 @@
+fn main():
+    a = input("Enter name: ")
+    b = 10
+    c = b + a
+    print(c)
+    return 0

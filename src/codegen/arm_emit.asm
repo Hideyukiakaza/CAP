@@ -1133,8 +1133,8 @@ arm_emit_expr:
     ; Check if left tag (x3) != 1 or right tag (x1) != 1
     ; cmp x3, #1 -> 0xF100047F
     EMIT_ARM 0xF100047F
-    ; b.ne +12 -> 0x54000061 (trap)
-    EMIT_ARM 0x54000061
+    ; b.ne +16 -> 0x54000081 (to trap bl)
+    EMIT_ARM 0x54000081
 
     ; cmp x1, #1 -> 0xF100043F
     EMIT_ARM 0xF100043F
