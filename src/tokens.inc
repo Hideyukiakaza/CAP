@@ -1,4 +1,4 @@
-; Copyright 2026 Hideyukiakaza
+; Copyright 2026 Devadath A A (aka Hideyukiakaza)
 ;
 ; Licensed under the Apache License, Version 2.0 (the "License");
 ; you may not use this file except in compliance with the License.
