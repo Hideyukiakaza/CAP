@@ -1,0 +1,4 @@
+fn main():
+    defer print(2)
+    print(1)
+    return 0

@@ -7,9 +7,12 @@ This document describes the syntax and semantics of CAP v0.1.0.
 Functions are declared with `fn` and use Python-style indentation:
 
 ```cap
-/* ignore-example-check */
 fn add(a, b):
     return a + b
+
+fn main():
+    print(add(2, 3))
+    return 0
 ```
 
 - Scalar parameters are unannotated.
@@ -57,20 +60,15 @@ Supported control statements: `if`, `elif`, `else`, `while`, `loop`, `break`, `f
 ## 6. Structs & Memory Management
 
 ```cap
-/* ignore-example-check */
-struct Point:
-    x: int
-    y: int
-
 fn main():
-    p = Point{x: 10, y: 20}
-    ptr = alloc(64)
-    defer free(ptr)
+    defer print(2)
+    print(1)
     return 0
 ```
 
 - Field access: `p.x`.
-- `alloc(size)` allocates heap memory; `defer stmt` schedules deferred statements to execute on scope exit; `free(ptr)` releases memory.
+- `alloc(size)` allocates heap memory; `defer stmt` schedules deferred statements to run when the function returns, in reverse order.
+- `free(ptr)` currently crashes (segfault) and is not covered by any test. Do not use it yet (see Known Limitations in the README).
 
 ## 7. Builtin Functions & F-Strings
 
