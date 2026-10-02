@@ -1,0 +1,6 @@
+struct Point:
+    x: int
+    y: int
+
+fn add(a, b):
+    return a + b

@@ -1,5 +1,7 @@
-naked fn foo():
-    x = 1
-    return x
+naked fn helper():
+    asm:
+        ret
 
-foo()
+fn main():
+    helper()
+    return 0
