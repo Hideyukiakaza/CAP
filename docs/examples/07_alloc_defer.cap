@@ -1,0 +1,4 @@
+fn main():
+    ptr = alloc(16)
+    print("Allocated memory successfully")
+    return 0

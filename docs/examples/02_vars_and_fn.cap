@@ -1,0 +1,9 @@
+fn add(a, b):
+    return a + b
+
+fn main():
+    x = 10
+    y = 20
+    sum = add(x, y)
+    print(f"Sum: {sum}")
+    return 0

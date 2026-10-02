@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm binutils make qemu-system-x86 qemu-user
+
+      - name: Print Dependency Versions
+        run: |
+          nasm --version
+          ld --version
+          qemu-system-x86_64 --version
+
+      - name: Clean and Build Compiler
+        run: |
+          make clean
+          make
+
+      - name: Run Frontend Tests
+        run: ./tests/frontend/run_tests.sh
+
+      - name: Run Codegen Tests
+        run: ./tests/codegen/run_tests.sh
+
+      - name: Run Freestanding Tests
+        run: ./tests/freestanding/run_tests.sh
+
+      - name: Run Docs Examples Tests
+        run: ./tests/docs/run_tests.sh
+
+      - name: Run CLI Tests
+        run: ./tests/cli/run_tests.sh

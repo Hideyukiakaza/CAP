@@ -1,0 +1,5 @@
+fn main():
+    asm:
+        mov rax, 0x383420310A
+    print("ASM block executed")
+    return 0

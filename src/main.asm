@@ -1,9 +1,26 @@
+; Copyright 2026 Hideyukiakaza
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;     http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
 ; src/main.asm - CAP v0.1 CLI Entry Point with Codegen Support
 default rel
 
 %include "src/codegen/target.inc"
 
 section .data
+s_version:           db "--version", 0
+s_flag_v:            db "-v", 0
+s_version_out:       db "capc 0.1.0", 10, 0
 s_dump_ast:          db "--dump-ast", 0
 s_dump_tokens:       db "--dump-tokens", 0
 s_flag_a:            db "-a", 0
@@ -56,6 +73,29 @@ _start:
     pop rbx             ; current arg
     dec r12
 
+    ; check -v / --version
+    mov rdi, rbx
+    mov rsi, s_flag_v
+    call str_cmp
+    test rax, rax
+    jnz .chk_version
+    mov rsi, s_version_out
+    call print_str
+    mov rdi, 0
+    call sys_exit
+
+.chk_version:
+    mov rdi, rbx
+    mov rsi, s_version
+    call str_cmp
+    test rax, rax
+    jnz .chk_a
+    mov rsi, s_version_out
+    call print_str
+    mov rdi, 0
+    call sys_exit
+
+.chk_a:
     ; check -a
     mov rdi, rbx
     mov rsi, s_flag_a
