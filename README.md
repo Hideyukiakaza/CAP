@@ -35,7 +35,7 @@ Small hosted scripts need no `main` wrapper; CAP is not a Python subset.
 
 Source file (`docs/examples/01_hello.cap`):
 ```cap
-print("Hello, CAP v0.1.1!")
+    print("Hello, CAP v0.1.1!")
 ```
 
 Compile and run:
