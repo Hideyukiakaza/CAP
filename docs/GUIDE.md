@@ -1,6 +1,6 @@
 # CAP User Guide & Tutorial
 
-Welcome to CAP v0.1.0! This guide walks you through installing the compiler, writing hosted applications, and creating bare-metal freestanding programs for QEMU.
+Welcome to CAP v0.1.1! This guide walks you through installing the compiler, writing hosted applications, and creating bare-metal freestanding programs for QEMU.
 
 ## 1. Installation
 
@@ -18,14 +18,18 @@ cd cap
 make clean && make
 ./capc --version
 ```
+Output:
+```
+capc 0.1.1
+```
 
 ## 2. Hello World
 
+Small hosted scripts need no `main` wrapper!
+
 Create `hello.cap`:
 ```cap
-fn main():
-    print("Hello, CAP v0.1.0!")
-    return 0
+print("Hello, CAP v0.1.1!")
 ```
 
 Compile and run:
@@ -35,7 +39,7 @@ Compile and run:
 ```
 Output:
 ```
-Hello, CAP v0.1.0!
+Hello, CAP v0.1.1!
 ```
 
 ## 3. Variables and Functions
@@ -44,12 +48,10 @@ Hello, CAP v0.1.0!
 fn add(a, b):
     return a + b
 
-fn main():
-    x = 10
-    y = 20
-    sum = add(x, y)
-    print(f"Sum: {sum}")
-    return 0
+x = 10
+y = 20
+sum = add(x, y)
+print(f"Sum: {sum}")
 ```
 
 Compile and run:
@@ -70,10 +72,8 @@ struct Point:
     x: int
     y: int
 
-fn main():
-    p = Point{x: 5, y: 12}
-    print(f"Point x={p.x}, y={p.y}")
-    return 0
+p = Point{x: 5, y: 12}
+print(f"Point x={p.x}, y={p.y}")
 ```
 
 Output:
@@ -81,9 +81,19 @@ Output:
 Point x=5, y=12
 ```
 
-## 5. Freestanding Kernel Mode
+## 5. Control Flow
 
-Compile for bare-metal target without hosted dependencies:
+```cap
+x = 10
+if x > 5:
+    print("Greater than 5")
+else:
+    print("Less or equal")
+```
+
+## 6. Freestanding Kernel Mode
+
+Compile for bare-metal target without hosted dependencies (requires explicit `main`):
 ```cap
 fn main():
     asm:

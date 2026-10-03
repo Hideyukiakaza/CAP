@@ -1,24 +1,30 @@
-# CAP v0.1.0 Language Reference
+# CAP v0.1.1 Language Reference
 
-This document describes the syntax and semantics of CAP v0.1.0.
+This document describes the syntax and semantics of CAP v0.1.1.
 
-## 1. Functions & Parameters
+## 1. Program Entry & Functions
 
-Functions are declared with `fn` and use Python-style indentation:
+Small hosted scripts need no `main` wrapper; CAP is not a Python subset. There are no lists, dicts, files, or integers past 64 bits.
 
-```cap
-fn add(a, b):
-    return a + b
+### Hosted Mode Rules
+- A file with no `fn main` runs its top-level statements.
+- A `fn` or `struct` declaration at top level is not executed directly. Functions may be called before the line where they are declared.
+- Falling off the end of a top-level script or function exits with code 0.
+- A top-level `return n` sets the program exit code to `n`.
+- A non-naked function that does not end in an explicit `return` returns 0.
+- `defer` statements run once, in reverse order, before returning or falling off.
+- `fn main():` still works. Mixing `fn main():` with a top-level statement that is not a `fn` or `struct` declaration produces `SyntaxError: top-level statements cannot be mixed with 'fn main()' (line N)`.
+- A hosted file containing only declarations and no top-level statements produces `NameError: main function not found`.
 
-fn main():
-    print(add(2, 3))
-    return 0
-```
+### Freestanding Mode Rules
+- Freestanding targets (`--freestanding`, `--boot-thin`, `--no-boot-stub`) require an explicit `fn main` or `naked fn main`. Implicit `main` does not apply.
+- A `naked fn` emits raw body instructions without compiler frame prologues/epilogues and does not gain a synthesized `return`.
 
+### Parameters & Scope
 - Scalar parameters are unannotated.
-- Struct parameters require explicit type annotations (e.g. `fn process(p: Point):`).
-- Program entry point requires `fn main():`.
-- Functions declared with `naked fn main():` omit standard prologues/epilogues (variable declarations, `alloc`, `defer`, and `return` expressions are prohibited in naked functions).
+- Struct parameters require explicit type annotations (e.g., `fn process(p: Point):`).
+- A top-level variable is not visible inside a function. Referencing a top-level variable inside a function produces `NameError: undefined name 'x' (line N)` followed by the hint `top-level variables are not visible inside functions; pass 'x' as a parameter`.
+- Referencing an undefined variable that exists nowhere produces a single-line `NameError: undefined name 'x' (line N)` without a hint.
 
 ## 2. Variables and Assignment
 
@@ -43,37 +49,27 @@ Precedence (tightest to loosest):
 8. Relational: `<`, `>`, `<=`, `>=`
 9. Equality: `==`, `!=`
 
-## 5. Control Flow
+## 5. Control Flow & Loops
 
-```cap
-fn main():
-    x = 10
-    if x > 5:
-        print("Greater than 5")
-    else:
-        print("Less or equal")
-    return 0
-```
-
-Supported control statements: `if`, `elif`, `else`, `while`, `loop`, `break`, `for ... in range(...)`.
+- `for i in 10:` is shorthand for `for i in range(10):`. `i` takes values 0, 1, 2, 3, 4, 5, 6, 7, 8, 9. The stop value is exclusive. `for i in n:` and `for i in (n + 1):` use the same shorthand.
+- `for i in range(...)` remains fully supported, including `range(stop)`, `range(start, stop)`, and `range(start, stop, step)`.
+- `while (n > 0):` is equivalent to `while n > 0:`.
+- `loop:` runs continuously until a `break` or `return` is executed. A `loop` without an exit strategy hangs indefinitely.
+- `break` exits the enclosing `loop`, `while`, or `for` loop, and execution continues at the next statement after the loop.
+- Using `break` outside an enclosing loop produces a compile-time `SyntaxError: 'break' outside loop (line N)`.
+- `/*/` begins a comment that runs to the end of the line.
 
 ## 6. Structs & Memory Management
-
-```cap
-fn main():
-    defer print(2)
-    print(1)
-    return 0
-```
 
 - Field access: `p.x`.
 - `alloc(size)` allocates heap memory; `defer stmt` schedules deferred statements to run when the function returns, in reverse order.
 - `free(ptr)` currently crashes (segfault) and is not covered by any test. Do not use it yet (see Known Limitations in the README).
 
-## 7. Builtin Functions & F-Strings
+## 7. Builtin Functions, Input, and F-Strings
 
 - `print(expr)`: Output integer, string, or f-string expression.
-- `input()`: Read numeric/string input.
+- `input()`: Reads a line from stdin. A prompt string is permitted: `input("Enter your name: ")`.
+- **Runtime Type Conversion for `input()`:** Integer-shaped text is assigned INT (tag 1), float-shaped text is assigned FLOAT (tag 2), and any other text is assigned STRING (tag 3). For an integer line, `a + 5` works directly without requiring an explicit `int()` conversion call. Float arithmetic is not implemented, and a float tag does not make `n * 2` work.
 - F-strings: `f"x = {x}"`. Double braces `{{` and `}}` unescape to literal `{` and `}`.
 
 ## 8. Inline Assembly (`asm:`)

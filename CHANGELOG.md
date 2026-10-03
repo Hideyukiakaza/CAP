@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [0.1.1] - 2026-10-03
+
+### Added
+- Hosted top-level statement desugaring (implicit `main` wrapper) for executable top-level scripts.
+- Implicit return 0 for non-naked hosted functions.
+- Shorthand count syntax for `for` loops (`for i in count:` / `for i in expr:` as shorthand for `range(expr)`).
+- `break` statement support inside `for`, `while`, and `loop` constructs with semantic validation disallowing `break` outside loops.
+- Bumped compiler version string to `capc 0.1.1`.
+
+### Fixed
+- Fixed `break` jump target resolution in nested loops and multiple `break` statements.
+- Fixed x86-64 `.s_for` stack frame isolation to prevent register corruption during statement code generation.
+
+### Notes
+- Freestanding mode (`--freestanding`, `--boot-thin`, `--no-boot-stub`) continues to require an explicit `fn main` or `naked fn main`.
+
 ## [0.1.0] - 2026-09-29
 
 Initial alpha release of CAP for Linux x86-64.
