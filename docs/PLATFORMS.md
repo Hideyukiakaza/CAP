@@ -1,6 +1,6 @@
 # CAP Platform Support
 
-CAP v0.1.0 targets Linux x86-64 host environments.
+CAP v0.1.1 targets Linux x86-64 host environments.
 
 ## Platform Support Matrix
 

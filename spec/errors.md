@@ -13,9 +13,11 @@ Compile-time errors occur during tokenization, parsing, or semantic analysis/cod
 | `LexerError` | `LexerError: hex literal '<spelling>' exceeds 64 bits (line <L>)` | Hexadecimal literal exceeds 64 bits (more than 16 hex digits). |
 | `LexerError` | `LexerError: binary literal '<spelling>' exceeds 64 bits (line <L>)` | Binary literal exceeds 64 bits (more than 64 binary digits). |
 | `SyntaxError` | `SyntaxError: <description> (line <L>)` | Indentation, grammar, or naked function rule violations. |
-| `NameError` | `NameError: undefined name '<var_name>' (line <L>)` | Variable referenced before assignment or definition in function scope (textual order). |
+| `SyntaxError` | `SyntaxError: top-level statements cannot be mixed with 'fn main()' (line <L>)` | Mixing executable top-level statements with an explicit `fn main()` declaration. |
+| `SyntaxError` | `SyntaxError: 'break' outside loop (line <L>)` | Using a `break` statement outside an enclosing `loop`, `while`, or `for` loop. |
+| `NameError` | `NameError: undefined name '<var_name>' (line <L>)` | Variable referenced before assignment or definition in function scope (textual order). Includes hint `top-level variables are not visible inside functions; pass '<var_name>' as a parameter` if the name exists at top level. |
 | `NameError` | `NameError: undefined function '<fn_name>' (line <L>)` | Function called without being declared or builtin. |
-| `NameError` | `NameError: main function not found` | Source file lacks a top-level `main` function declaration. |
+| `NameError` | `NameError: main function not found` | Source file lacks a top-level `main` function declaration in freestanding mode or decls-only hosted mode. |
 | `TypeError` | `TypeError: cannot access field '<field>': '<var>' is not a struct (line <L>)` | Field access on a non-struct type or scalar literal (e.g. `10.x`). Includes hint for unannotated struct parameters (`struct parameters need an annotation, e.g. p: Point`). |
 | `TypeError` | `TypeError: struct '<struct>' has no field '<field>' (line <L>)` | Accessing a field that does not exist on the target struct. |
 

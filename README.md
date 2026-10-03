@@ -1,4 +1,4 @@
-# CAP Programming Language (v0.1.0)
+# CAP Programming Language (v0.1.1)
 
 CAP is a compiled systems programming language featuring Python-like syntax, dynamic runtime type tagging, and direct machine code emission into ELF executables without intermediate compiler passes or LLVM.
 
@@ -25,17 +25,17 @@ CAP is a compiled systems programming language featuring Python-like syntax, dyn
 - *Goal:* Provide seamless inline assembly (`asm:`) with zero compiler frame overhead for OS kernels and drivers.
 - *Goal:* Keep the core toolchain self-contained in pure NASM x86-64 assembly without external C runtime dependencies.
 
-**Current Status:** Release `v0.1.0` (Alpha) targeting Linux x86-64 hosts.
+**Current Status:** Release `v0.1.1` (Alpha) targeting Linux x86-64 hosts.
 
 ---
 
 ## 2. Quick Example
 
+Small hosted scripts need no `main` wrapper; CAP is not a Python subset.
+
 Source file (`docs/examples/01_hello.cap`):
 ```cap
-fn main():
-    print("Hello, CAP v0.1.0!")
-    return 0
+print("Hello, CAP v0.1.1!")
 ```
 
 Compile and run:
@@ -46,8 +46,10 @@ Compile and run:
 
 Actual output:
 ```
-Hello, CAP v0.1.0!
+Hello, CAP v0.1.1!
 ```
+
+*Note:* `fn main():` still works for hosted targets, and is strictly required for freestanding targets (`--freestanding`) and `naked fn main():`.
 
 ---
 
@@ -85,7 +87,7 @@ capc [-a] [--freestanding|-k] [--boot-thin] [--no-boot-stub] [-o <outfile>] [--d
 - `--no-boot-stub`: Emit bare ELF64 executable with `e_entry` pointing directly at `main()`.
 - `--dump-ast`: Print AST node hierarchy and exit.
 - `--dump-tokens`: Print lexer token stream debug output and exit.
-- `-v` or `--version`: Print `capc 0.1.0` and exit 0.
+- `-v` or `--version`: Print `capc 0.1.1` and exit 0.
 
 ### Reserved Exit Codes
 - `0`: Successful compilation or CLI flag execution.
@@ -103,12 +105,10 @@ Full specification available in [docs/LANGUAGE.md](docs/LANGUAGE.md).
 fn add(a, b):
     return a + b
 
-fn main():
-    x = 10
-    y = 20
-    sum = add(x, y)
-    print(f"Sum: {sum}")
-    return 0
+x = 10
+y = 20
+sum = add(x, y)
+print(f"Sum: {sum}")
 ```
 
 ### Structs
@@ -118,67 +118,58 @@ struct Point:
     x: int
     y: int
 
-fn main():
-    p = Point{x: 5, y: 12}
-    print(f"Point x={p.x}, y={p.y}")
-    return 0
+p = Point{x: 5, y: 12}
+print(f"Point x={p.x}, y={p.y}")
 ```
 
 ### Control Flow
 ```cap
-fn main():
-    x = 10
-    if x > 5:
-        print("Greater than 5")
-    else:
-        print("Less or equal")
-    return 0
+x = 10
+if x > 5:
+    print("Greater than 5")
+else:
+    print("Less or equal")
 ```
 
 ### Bitwise Operators
 ```cap
-fn main():
-    a = 0b1100
-    b = 0b1010
-    and_val = a & b
-    or_val = a | b
-    xor_val = a ^ b
-    shl_val = a << 2
-    print(f"AND: {and_val}, OR: {or_val}, XOR: {xor_val}, SHL: {shl_val}")
-    return 0
+a = 0b1100
+b = 0b1010
+and_val = a & b
+or_val = a | b
+xor_val = a ^ b
+shl_val = a << 2
+print(f"AND: {and_val}, OR: {or_val}, XOR: {xor_val}, SHL: {shl_val}")
 ```
 
 ### Inline Assembly (`asm:`)
 ```cap
-fn main():
-    asm:
-        mov rax, 0x383420310A
-    print("ASM block executed")
-    return 0
+asm:
+    mov rax, 0x383420310A
+print("ASM block executed")
 ```
 
 ### Memory Management (`alloc`/`defer`)
 ```cap
-fn main():
-    ptr = alloc(16)
-    print("Allocated memory successfully")
-    return 0
+ptr = alloc(16)
+print("Allocated memory successfully")
 ```
 
 Deferred statements run when the function returns:
 
 ```cap
-fn main():
+fn test():
     defer print(2)
     print(1)
-    return 0
+
+test()
 ```
 
 ---
 
 ## 6. Freestanding and Kernel Mode
 
-Freestanding mode generates raw bare-metal images bootable under QEMU system emulation:
+Freestanding mode generates raw bare-metal images bootable under QEMU system emulation (requires explicit `main`):
 
 ```cap
 fn main():
@@ -225,8 +216,8 @@ Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 | Host Platform | Support Status | Method |
 |---|---|---|
 | Linux x86-64 (Ubuntu 24.04+) | Supported | Native |
-| Windows 10/11 x86-64 | Supported | WSL2 / Docker |
-| macOS (Intel / Apple Silicon) | Supported | Docker (`--platform linux/amd64`) |
+| Windows 10/11 x86-64 | Untested | via WSL2 / Docker |
+| macOS (Intel / Apple Silicon) | Untested | via Docker (`--platform linux/amd64`) |
 
 ---
 

@@ -20,7 +20,7 @@ default rel
 section .data
 s_version:           db "--version", 0
 s_flag_v:            db "-v", 0
-s_version_out:       db "capc 0.1.0", 10, 0
+s_version_out:       db "capc 0.1.1", 10, 0
 s_dump_ast:          db "--dump-ast", 0
 s_dump_tokens:       db "--dump-tokens", 0
 s_flag_a:            db "-a", 0

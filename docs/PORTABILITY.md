@@ -1,6 +1,6 @@
 # CAP Portability Note
 
-This document outlines the system dependencies and OS-specific components of the CAP compiler (`capc`) v0.1.0.
+This document outlines the system dependencies and OS-specific components of the CAP compiler (`capc`) v0.1.1.
 
 ## Linux x86-64 Host Dependencies
 

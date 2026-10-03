@@ -1,4 +1,5 @@
-fn main():
+fn test():
     defer print(2)
     print(1)
-    return 0
+
+test()
