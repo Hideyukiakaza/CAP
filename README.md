@@ -34,7 +34,7 @@ CAP is a compiled systems programming language featuring Python-like syntax, dyn
 Source file (`docs/examples/01_hello.cap`):
 ```cap
 fn main():
-    print("Hello, CAP v0.1.0!")
+    print("Hello, CAP v0.1.1!")
     return 0
 ```
 
@@ -46,7 +46,7 @@ Compile and run:
 
 Actual output:
 ```
-Hello, CAP v0.1.0!
+Hello, CAP v0.1.1!
 ```
 
 ---
