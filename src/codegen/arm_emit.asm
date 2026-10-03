@@ -57,6 +57,7 @@ armstate: resb ArmState_size
 arm_defer_nodes: resq 256
 arm_defer_count: resq 1
 arm_is_main_fn: resq 1
+arm_break_head: resq 1
 
 section .text
 
@@ -188,6 +189,39 @@ arm_emit_program:
     ret
 
 
+arm_patch_break_list:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r10
+
+    mov rax, [rdi + 16]        ; len
+    mov rbx, [arm_break_head]
+.patch_loop:
+    test rbx, rbx
+    jz .done
+    mov rcx, [rdi + 0]         ; ptr
+    mov r10d, [rcx + rbx]
+    mov rdx, rax
+    sub rdx, rbx
+    sar rdx, 2
+    and edx, 0x03FFFFFF
+    or edx, 0x14000000
+    push rax
+    push r10
+    mov rsi, rbx
+    call patch_dword
+    pop r10
+    pop rax
+    mov rbx, r10
+    jmp .patch_loop
+.done:
+    pop r10
+    pop rbx
+    pop rbp
+    ret
+
+
 arm_emit_fn:
     push rbp
     mov rbp, rsp
@@ -199,6 +233,7 @@ arm_emit_fn:
 
     mov qword [arm_defer_count], 0
     mov qword [arm_is_main_fn], 0
+    mov qword [arm_break_head], 0
 
     mov r12, rdi             ; fn AST node
     mov r13, [armstate + ArmState.code_buf]
@@ -406,6 +441,8 @@ arm_emit_stmt:
     je .s_for
     cmp rax, AST_LOOP
     je .s_loop
+    cmp rax, AST_BREAK
+    je .s_break
     cmp rax, AST_ASM_BLOCK
     je .s_asm_block
     cmp rax, AST_EXPR_STMT
@@ -720,6 +757,9 @@ arm_emit_stmt:
     jmp .next
 
 .s_while:
+    push qword [arm_break_head]
+    mov qword [arm_break_head], 0
+
     mov rbx, [r13 + 16]      ; loop_start
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_expr
@@ -757,12 +797,20 @@ arm_emit_stmt:
     mov rsi, r10
     mov edx, eax
     call patch_dword
+
+    ; Patch breaks
+    mov rdi, r13
+    call arm_patch_break_list
+    pop qword [arm_break_head]
     jmp .next
 
 .s_for:
+    push qword [arm_break_head]
+    mov qword [arm_break_head], 0
+
     push rbp
     mov rbp, rsp
-    sub rsp, 32
+    sub rsp, 48              ; [rbp-8]=i_off, [rbp-16]=stop_off, [rbp-24]=step_off, [rbp-32]=pos_fixup
 
     ; Bind loop var i
     mov rcx, [armstate + ArmState.stack_offset]
@@ -773,20 +821,35 @@ arm_emit_stmt:
     add qword [armstate + ArmState.stack_offset], 16
     mov [rbp - 8], rcx       ; [rbp - 8] = i_off
 
+    ; Store tag 1 for loop variable i: stur x11, [x29, #-(i_off + 8)]
+    EMIT_ARM 0xD280002B      ; mov x11, #1
+    mov rax, rcx
+    add rax, 8
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    or eax, 0xF80003AB
+    EMIT_ARM eax
+
     ; Allocate stop limit slot
     mov rcx, [armstate + ArmState.stack_offset]
     add qword [armstate + ArmState.stack_offset], 16
     mov [rbp - 16], rcx      ; [rbp - 16] = stop_off
 
+    ; Allocate step slot
+    mov rcx, [armstate + ArmState.stack_offset]
+    add qword [armstate + ArmState.stack_offset], 16
+    mov [rbp - 24], rcx      ; [rbp - 24] = step_off
+
     ; Parse range args
     mov rbx, [r12 + ASTNode.child1]
     mov rbx, [rbx + ASTNode.child1] ; arg1
     test rbx, rbx
-    jz .for_head
+    jz .for_done_init_arm
 
     mov r10, [rbx + ASTNode.next]   ; arg2
     test r10, r10
-    jnz .range_2_args_arm
+    jnz .range_2_or_3_args_arm
 
     ; 1 arg: range(stop)
     mov rdi, rbx
@@ -797,41 +860,80 @@ arm_emit_stmt:
     and eax, 0x1FF
     shl eax, 12
     or eax, 0xF80003A0
-    EMIT_ARM eax
+    EMIT_ARM eax             ; stur x0, [x29, #-stop_off]
 
-    mov rcx, [rbp - 8]
-    mov rax, rcx
-    neg rax
-    and eax, 0x1FF
-    shl eax, 12
-    or eax, 0xF80003BF
-    EMIT_ARM eax
-    jmp .for_head
-
-.range_2_args_arm:
-    ; 2 args: range(start, stop)
-    mov rdi, rbx
-    call arm_emit_expr
+    ; start = 0
+    EMIT_ARM 0xD2800000      ; mov x0, #0
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
     and eax, 0x1FF
     shl eax, 12
     or eax, 0xF80003A0
-    EMIT_ARM eax
+    EMIT_ARM eax             ; stur x0, [x29, #-i_off]
+
+    ; step = 1
+    EMIT_ARM 0xD2800020      ; mov x0, #1
+    mov rcx, [rbp - 24]
+    mov rax, rcx
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    or eax, 0xF80003A0
+    EMIT_ARM eax             ; stur x0, [x29, #-step_off]
+    jmp .for_done_init_arm
+
+.range_2_or_3_args_arm:
+    ; 2 or 3 args: range(start, stop[, step])
+    mov rdi, rbx
+    call arm_emit_expr       ; arg1 = start
+    mov rcx, [rbp - 8]
+    mov rax, rcx
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    or eax, 0xF80003A0
+    EMIT_ARM eax             ; stur x0, [x29, #-i_off]
 
     mov rdi, r10
-    call arm_emit_expr
+    call arm_emit_expr       ; arg2 = stop
     mov rcx, [rbp - 16]
     mov rax, rcx
     neg rax
     and eax, 0x1FF
     shl eax, 12
     or eax, 0xF80003A0
-    EMIT_ARM eax
+    EMIT_ARM eax             ; stur x0, [x29, #-stop_off]
+
+    mov r11, [r10 + ASTNode.next] ; arg3
+    test r11, r11
+    jz .range_default_step_arm
+
+    mov rdi, r11
+    call arm_emit_expr       ; arg3 = step
+    mov rcx, [rbp - 24]
+    mov rax, rcx
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    or eax, 0xF80003A0
+    EMIT_ARM eax             ; stur x0, [x29, #-step_off]
+    jmp .for_done_init_arm
+
+.range_default_step_arm:
+    EMIT_ARM 0xD2800020      ; mov x0, #1
+    mov rcx, [rbp - 24]
+    mov rax, rcx
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    or eax, 0xF80003A0
+    EMIT_ARM eax             ; stur x0, [x29, #-step_off]
+
+.for_done_init_arm:
+    mov rbx, [r13 + 16]      ; loop_start
 
 .for_head:
-    mov rbx, [r13 + 16]      ; loop_start
     ; Load loop var into x0: ldur x0, [x29, #-i_off]
     mov rcx, [rbp - 8]
     mov rax, rcx
@@ -857,7 +959,7 @@ arm_emit_stmt:
 
     ; b.ge for_end (0x5400000A)
     mov rax, [r13 + 16]
-    mov [rbp - 24], rax      ; fixup_off
+    mov [rbp - 32], rax      ; fixup_off
     EMIT_ARM 0x5400000A
 
     ; Emit body
@@ -866,7 +968,8 @@ arm_emit_stmt:
     call arm_emit_stmt
     pop rbx
 
-    ; Increment loop var: ldur x0; add x0, x0, #1; stur x0
+    ; Increment loop var: i += step
+    ; ldur x0, [x29, #-i_off]
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
@@ -876,9 +979,20 @@ arm_emit_stmt:
     or eax, r8d
     EMIT_ARM eax
 
-    ; add x0, x0, #1 -> 0x91000400
-    EMIT_ARM 0x91000400
+    ; ldur x1, [x29, #-step_off]
+    mov rcx, [rbp - 24]
+    mov rax, rcx
+    neg rax
+    and eax, 0x1FF
+    shl eax, 12
+    mov r8d, 0xF84003A1
+    or eax, r8d
+    EMIT_ARM eax
 
+    ; add x0, x0, x1 -> 0x8B010000
+    EMIT_ARM 0x8B010000
+
+    ; stur x0, [x29, #-i_off]
     mov rcx, [rbp - 8]
     mov rax, rcx
     neg rax
@@ -899,7 +1013,7 @@ arm_emit_stmt:
 
     ; Patch b.ge
     mov rax, [r13 + 16]
-    mov rcx, [rbp - 24]
+    mov rcx, [rbp - 32]
     sub rax, rcx
     sar rax, 2               ; word offset
     and eax, 0x7FFFF
@@ -913,9 +1027,17 @@ arm_emit_stmt:
 
     mov rsp, rbp
     pop rbp
+
+    ; Patch breaks
+    mov rdi, r13
+    call arm_patch_break_list
+    pop qword [arm_break_head]
     jmp .next
 
 .s_loop:
+    push qword [arm_break_head]
+    mov qword [arm_break_head], 0
+
     mov rbx, [r13 + 16]
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_stmt
@@ -928,6 +1050,19 @@ arm_emit_stmt:
     mov r8d, 0x14000000
     or eax, r8d
     EMIT_ARM eax
+
+    ; Patch breaks
+    mov rdi, r13
+    call arm_patch_break_list
+    pop qword [arm_break_head]
+    jmp .next
+
+.s_break:
+    mov rax, [r13 + 16]      ; fixup_off
+    mov rsi, [arm_break_head]    ; old head
+    mov rdi, r13
+    call emit_dword          ; placeholder stores old head
+    mov [arm_break_head], rax    ; new head
     jmp .next
 
 .s_asm_block:

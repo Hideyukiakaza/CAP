@@ -1,0 +1,6 @@
+loop:
+    if 1:
+        break
+    else:
+        break
+print("after")
