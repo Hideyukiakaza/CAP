@@ -558,7 +558,6 @@ x86_emit_stmt:
     push r13
     push r14
     push r15
-    sub rsp, 80              ; stack space for loop state: [rbp-32]=i_off, [rbp-40]=stop_off, [rbp-48]=step_off, [rbp-56]=pos_fixup, [rbp-64]=neg_fixup
 
     mov r12, rdi             ; stmt node
     mov r13, [xstate + X86State.code_buf]
@@ -1025,6 +1024,10 @@ x86_emit_stmt:
     push qword [x86_break_head]
     mov qword [x86_break_head], 0
 
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64              ; [rbp-8]=i_off, [rbp-16]=stop_off, [rbp-24]=step_off, [rbp-32]=pos_fixup, [rbp-40]=neg_fixup
+
     ; Bind loop var i on function stack frame
     mov rcx, [xstate + X86State.stack_offset]
     mov rdi, [r12 + ASTNode.val]
@@ -1032,7 +1035,7 @@ x86_emit_stmt:
     mov rdx, rcx
     call add_symbol
     add qword [xstate + X86State.stack_offset], 16
-    mov [rbp - 32], rcx      ; for_i_off
+    mov [rbp - 8], rcx       ; for_i_off
 
     ; Store tag 1 for loop variable i: mov qword [rbp - (i_off + 8)], 1
     mov rdi, r13
@@ -1053,12 +1056,12 @@ x86_emit_stmt:
     ; Allocate stop limit slot
     mov rcx, [xstate + X86State.stack_offset]
     add qword [xstate + X86State.stack_offset], 8
-    mov [rbp - 40], rcx      ; for_stop_off
+    mov [rbp - 16], rcx      ; for_stop_off
 
     ; Allocate step slot
     mov rcx, [xstate + X86State.stack_offset]
     add qword [xstate + X86State.stack_offset], 8
-    mov [rbp - 48], rcx      ; for_step_off
+    mov [rbp - 24], rcx      ; for_step_off
 
     ; Parse range args (child1 = AST_CALL range)
     mov rbx, [r12 + ASTNode.child1]
@@ -1074,7 +1077,7 @@ x86_emit_stmt:
     ; 1 arg: range(stop) -> start=0, stop=arg1, step=1
     mov rdi, rbx
     call x86_emit_expr
-    mov rcx, [rbp - 40]
+    mov rcx, [rbp - 16]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1088,7 +1091,7 @@ x86_emit_stmt:
     call emit_dword          ; store stop
 
     ; start = 0
-    mov rcx, [rbp - 32]
+    mov rcx, [rbp - 8]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1104,7 +1107,7 @@ x86_emit_stmt:
     call emit_dword          ; store start 0
 
     ; step = 1
-    mov rcx, [rbp - 48]
+    mov rcx, [rbp - 24]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1124,7 +1127,7 @@ x86_emit_stmt:
     ; Evaluate start (arg1)
     mov rdi, rbx
     call x86_emit_expr
-    mov rcx, [rbp - 32]
+    mov rcx, [rbp - 8]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1140,7 +1143,7 @@ x86_emit_stmt:
     ; Evaluate stop (arg2)
     mov rdi, r10
     call x86_emit_expr
-    mov rcx, [rbp - 40]
+    mov rcx, [rbp - 16]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1161,7 +1164,7 @@ x86_emit_stmt:
     ; Evaluate step (arg3)
     mov rdi, r11
     call x86_emit_expr
-    mov rcx, [rbp - 48]
+    mov rcx, [rbp - 24]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1176,7 +1179,7 @@ x86_emit_stmt:
     jmp .for_done_init
 
 .range_default_step:
-    mov rcx, [rbp - 48]
+    mov rcx, [rbp - 24]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1196,7 +1199,7 @@ x86_emit_stmt:
 
 .for_head:
     ; Runtime check: cmp step, 0
-    mov rcx, [rbp - 48]
+    mov rcx, [rbp - 24]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1218,7 +1221,7 @@ x86_emit_stmt:
     call emit_byte            ; jl +28
 
     ; --- Positive Step Case: check i >= stop ---
-    mov rcx, [rbp - 32]
+    mov rcx, [rbp - 8]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1231,7 +1234,7 @@ x86_emit_stmt:
     mov esi, eax
     call emit_dword          ; mov rax, [rbp - i_off]
 
-    mov rcx, [rbp - 40]
+    mov rcx, [rbp - 16]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1258,7 +1261,7 @@ x86_emit_stmt:
     mov sil, 0x8D
     call emit_byte
     mov rax, [r13 + 16]
-    mov [rbp - 56], rax      ; for_pos_fixup
+    mov [rbp - 32], rax      ; for_pos_fixup
     xor rsi, rsi
     call emit_dword
 
@@ -1269,7 +1272,7 @@ x86_emit_stmt:
     call emit_dword
 
     ; --- Negative Step Case: check i <= stop ---
-    mov rcx, [rbp - 32]
+    mov rcx, [rbp - 8]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1282,7 +1285,7 @@ x86_emit_stmt:
     mov esi, eax
     call emit_dword          ; mov rax, [rbp - i_off]
 
-    mov rcx, [rbp - 40]
+    mov rcx, [rbp - 16]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1309,7 +1312,7 @@ x86_emit_stmt:
     mov sil, 0x8E
     call emit_byte
     mov rax, [r13 + 16]
-    mov [rbp - 64], rax      ; for_neg_fixup
+    mov [rbp - 40], rax      ; for_neg_fixup
     xor rsi, rsi
     call emit_dword
 
@@ -1321,7 +1324,7 @@ x86_emit_stmt:
     pop rbx
 
     ; Increment loop var: i += step
-    mov rcx, [rbp - 48]
+    mov rcx, [rbp - 24]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1334,7 +1337,7 @@ x86_emit_stmt:
     mov esi, eax
     call emit_dword          ; mov rax, [rbp - step_off]
 
-    mov rcx, [rbp - 32]
+    mov rcx, [rbp - 8]
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -1359,7 +1362,7 @@ x86_emit_stmt:
 
     ; Patch jge (pos)
     mov rax, [r13 + 16]
-    mov rcx, [rbp - 56]
+    mov rcx, [rbp - 32]
     sub rax, rcx
     sub rax, 4
     mov rdi, r13
@@ -1369,13 +1372,16 @@ x86_emit_stmt:
 
     ; Patch jle (neg)
     mov rax, [r13 + 16]
-    mov rcx, [rbp - 64]
+    mov rcx, [rbp - 40]
     sub rax, rcx
     sub rax, 4
     mov rdi, r13
     mov rsi, rcx
     mov rdx, rax
     call patch_dword
+
+    mov rsp, rbp
+    pop rbp
 
     ; Patch breaks
     mov rdi, r13
@@ -1437,7 +1443,6 @@ x86_emit_stmt:
     jmp .stmt_loop
 
 .done:
-    add rsp, 80
     pop r15
     pop r14
     pop r13
