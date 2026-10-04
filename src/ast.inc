@@ -45,6 +45,7 @@
 %define AST_PARAM        29
 %define AST_FIELD_ACCESS 30
 %define AST_FIELD_ASSIGN 31
+%define AST_TERNARY      32
 
 struc ASTNode
     .type:   resq 1

@@ -1,0 +1,2 @@
+a = input("Enter a number: ")
+print(f"The number is {(a == 0) ? "zero" : (a % 2 == 0) ? "even" : "odd"}")

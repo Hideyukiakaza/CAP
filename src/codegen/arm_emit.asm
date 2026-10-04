@@ -1119,6 +1119,83 @@ arm_emit_expr:
     je .e_alloc
     cmp rax, AST_FIELD_ACCESS
     je .e_field_access
+    cmp rax, AST_TERNARY
+    je .e_ternary
+    jmp .done
+
+.e_ternary:
+    push r12                 ; save outer AST_TERNARY node
+
+    mov rdi, [r12 + ASTNode.child1]
+    call arm_emit_expr       ; x0 = val, x1 = tag
+
+    ; Truthiness check: cmp x1, #3 (STRING tag) -> 0xF1000C3F
+    EMIT_ARM 0xF1000C3F
+    ; b.eq .t_str_chk_arm (+2 words -> 0x54000040)
+    EMIT_ARM 0x54000040
+
+    ; Non-string truthiness: cmp x0, #0 -> 0xF100001F
+    EMIT_ARM 0xF100001F
+    ; b .t_branch_test_arm (+2 words -> 0x14000002)
+    EMIT_ARM 0x14000002
+
+.t_str_chk_arm:
+    ; String truthiness: ldrb w0, [x0] -> 0x39400000
+    EMIT_ARM 0x39400000
+    ; cmp x0, #0 -> 0xF100001F
+    EMIT_ARM 0xF100001F
+
+.t_branch_test_arm:
+    ; b.eq false_branch_arm (0x54000000 - placeholder)
+    mov rbx, [r13 + 16]      ; offset
+    push rbx
+    EMIT_ARM 0x54000000
+
+    ; True branch: evaluate child2
+    mov r12, [rsp + 8]       ; restore r12 from stack
+    mov rdi, [r12 + ASTNode.child2]
+    call arm_emit_expr
+
+    ; b end_ternary_arm (0x14000000 - placeholder)
+    mov r10, [r13 + 16]
+    push r10
+    EMIT_ARM 0x14000000
+
+    ; Patch b.eq (false_branch_arm start)
+    mov rax, [r13 + 16]
+    pop r10                  ; re-push b offset
+    pop rbx                  ; b.eq offset
+    push r10
+    sub rax, rbx
+    sar rax, 2               ; word offset
+    and eax, 0x7FFFF
+    shl eax, 5
+    mov r8d, 0x54000000
+    or eax, r8d
+    mov rdi, r13
+    mov rsi, rbx
+    mov edx, eax
+    call patch_dword
+
+    ; False branch: evaluate child3
+    mov r12, [rsp + 8]       ; restore r12 from stack
+    mov rdi, [r12 + ASTNode.child3]
+    call arm_emit_expr
+
+    ; Patch b (end_ternary_arm)
+    mov rax, [r13 + 16]
+    pop r10                  ; b offset
+    sub rax, r10
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x14000000
+    or eax, r8d
+    mov rdi, r13
+    mov rsi, r10
+    mov edx, eax
+    call patch_dword
+
+    pop r12                  ; restore r12
     jmp .done
 
 .e_alloc:
@@ -1479,8 +1556,8 @@ arm_emit_expr:
 
     ; sdiv x3, x2, x0 -> 0x9AC00C43
     EMIT_ARM 0x9AC00C43
-    ; msub x0, x3, x0, x2 -> 0x9B008060
-    EMIT_ARM 0x9B008060
+    ; msub x0, x3, x0, x2 -> 0x9B008860
+    EMIT_ARM 0x9B008860
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
     jmp .done
