@@ -153,7 +153,7 @@ loop:
     break
 ```
 
-`for i in count:` is shorthand for `for i in range(count):`. `break` exits the enclosing `loop`, `while`, or `for` loop.
+`for i in count:` is shorthand for `for i in range(count):`. `break` exits the enclosing `loop`, `while`, or `for` loop. Ternary conditional expressions `cond ? a : b` and f-string sub-expressions inside `{...}` are supported.
 
 ### Comments
 Line comments begin with `/*/` and run to the end of the line:

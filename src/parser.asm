@@ -28,6 +28,9 @@ s_line_is: db "Token line: ", 0
 s_val_is: db "Token val: ", 0
 s_prog_peek: db "Program peek token type: ", 0
 s_fstring: db "fstring", 0
+err_fstr_unexpected_colon: db "SyntaxError: unexpected ':' in f-string expression", 0
+err_fstr_unterminated: db "SyntaxError: unterminated f-string expression", 0
+s_newline: db 10, 0
 
 section .text
 global parse_program
@@ -1832,27 +1835,122 @@ parse_fstring:
     add r8, rcx              ; expr_start_ptr
     xor r9, r9               ; expr_len = 0
     mov r10, 1               ; brace_depth = 1
+    xor r11, r11             ; in_str = 0
+    push r14
+    push r15
+    xor r14, r14             ; paren_depth = 0
+    xor r15, r15             ; question_depth = 0
 
 .scan_close:
     cmp rcx, r13
-    jge .finish_expr_span
+    jge .check_unterminated
+
     mov al, [r12 + rcx]
+
+    test r11, r11
+    jnz .in_string_mode
+
+    cmp al, '"'
+    je .enter_string_mode
+
+    cmp al, '('
+    je .inc_paren
+    cmp al, ')'
+    je .dec_paren
+
     cmp al, '{'
-    jne .chk_rbrace
+    je .inc_brace
+    cmp al, '}'
+    je .chk_rbrace
+
+    cmp al, '?'
+    je .chk_question
+
+    cmp al, ':'
+    je .chk_colon
+
+    jmp .inc_expr
+
+.enter_string_mode:
+    mov r11, 1
+    jmp .inc_expr
+
+.in_string_mode:
+    cmp al, '"'
+    jne .inc_expr
+    xor r11, r11
+    jmp .inc_expr
+
+.inc_paren:
+    inc r14
+    jmp .inc_expr
+
+.dec_paren:
+    test r14, r14
+    jz .inc_expr
+    dec r14
+    jmp .inc_expr
+
+.inc_brace:
     inc r10
     jmp .inc_expr
+
 .chk_rbrace:
-    cmp al, '}'
-    jne .inc_expr
     dec r10
     jz .finish_expr_span
+    jmp .inc_expr
+
+.chk_question:
+    test r14, r14
+    jnz .inc_expr
+    cmp r10, 1
+    jne .inc_expr
+    inc r15                  ; question_depth++
+    jmp .inc_expr
+
+.chk_colon:
+    test r14, r14
+    jnz .inc_expr
+    cmp r10, 1
+    jne .inc_expr
+
+    test r15, r15
+    jnz .match_question
+
+    ; Stray ':' at depth 0
+    mov rsi, err_fstr_unexpected_colon
+    call print_err
+    mov rdi, [rbx + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.match_question:
+    dec r15
+    jmp .inc_expr
 
 .inc_expr:
     inc rcx
     inc r9
     jmp .scan_close
 
+.check_unterminated:
+    test r10, r10
+    jz .finish_expr_span
+    mov rsi, err_fstr_unterminated
+    call print_err
+    mov rdi, [rbx + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
 .finish_expr_span:
+    pop r15
+    pop r14
     cmp rcx, r13
     jge .done_expr_parse
     inc rcx                  ; skip '}'

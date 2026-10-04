@@ -1,4 +1,5 @@
-EXIT: 45
+EXIT: 101
 STDOUT:
 
 STDERR:
+RuntimeError: type mismatch in arithmetic operation
