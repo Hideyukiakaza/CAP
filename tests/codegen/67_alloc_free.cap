@@ -1,0 +1,3 @@
+p = alloc(8)
+free(p)
+print("freed")

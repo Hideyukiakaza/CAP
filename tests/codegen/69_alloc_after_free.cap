@@ -1,0 +1,4 @@
+p1 = alloc(16)
+free(p1)
+p2 = alloc(16)
+print("again")

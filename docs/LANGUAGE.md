@@ -115,8 +115,8 @@ print(f"Point x={p.x}, y={p.y}")
 ```
 
 - Field access: `p.x`.
-- `alloc(size)` allocates heap memory; `defer stmt` schedules deferred statements to run when the function returns, in reverse order.
-- `free(ptr)` currently crashes (segfault) and is not covered by any test. Do not use it yet (see Known Limitations in the README).
+- `alloc(size)` allocates header-backed heap memory via anonymous `mmap`.
+- `free(ptr)` releases the `mmap` block via `munmap`.
 
 ```cap
 ptr = alloc(16)

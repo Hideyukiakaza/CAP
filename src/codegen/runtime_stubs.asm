@@ -18,8 +18,8 @@ default rel
 %include "src/codegen/target.inc"
 
 section .text
-global emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int
-global emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int
+global emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int
+global emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int
 extern emit_bytes
 
 emit_x86_print_int:
@@ -48,6 +48,22 @@ emit_x86_print_str:
 
     lea rsi, [rel _stub_x86_print_str]
     mov rdx, _stub_x86_print_str_end - _stub_x86_print_str
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+
+emit_x86_free:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel _stub_x86_free]
+    mov rdx, _stub_x86_free_end - _stub_x86_free
     mov rdi, r12
     call emit_bytes
 
@@ -337,7 +353,8 @@ emit_arm_alloc:
 .bytes_arm_alloc:
     db 0xFD, 0x7B, 0xBE, 0xA9    ; stp x29, x30, [sp, #-32]!
     db 0xFD, 0x03, 0x00, 0x91    ; mov x29, sp
-    db 0xE1, 0x03, 0x00, 0xAA    ; mov x1, x0 (size)
+    db 0xE0, 0x0B, 0x00, 0xF9    ; str x0, [sp, #16]
+    db 0x01, 0x20, 0x00, 0x91    ; add x1, x0, #8
     db 0x00, 0x00, 0x80, 0xD2    ; mov x0, #0
     db 0x62, 0x00, 0x80, 0xD2    ; mov x2, #3 (PROT_READ|PROT_WRITE)
     db 0x43, 0x04, 0x80, 0xD2    ; mov x3, #34 (MAP_PRIVATE|MAP_ANONYMOUS)
@@ -345,9 +362,41 @@ emit_arm_alloc:
     db 0x05, 0x00, 0x80, 0xD2    ; mov x5, #0
     db 0xC8, 0x1B, 0x80, 0xD2    ; mov x8, #222 (sys_mmap)
     db 0x01, 0x00, 0x00, 0xD4    ; svc #0
+    db 0xE1, 0x0B, 0x40, 0xF9    ; ldr x1, [sp, #16]
+    db 0x01, 0x00, 0x00, 0xF9    ; str x1, [x0]
+    db 0x00, 0x20, 0x00, 0x91    ; add x0, x0, #8
     db 0xFD, 0x7B, 0xC2, 0xA8    ; ldp x29, x30, [sp], #32
     db 0xC0, 0x03, 0x5F, 0xD6    ; ret
 .bytes_arm_alloc_end:
+
+
+emit_arm_free:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel .bytes_arm_free]
+    mov rdx, .bytes_arm_free_end - .bytes_arm_free
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+.bytes_arm_free:
+    db 0xFD, 0x7B, 0xBF, 0xA9    ; stp x29, x30, [sp, #-16]!
+    db 0xFD, 0x03, 0x00, 0x91    ; mov x29, sp
+    db 0xC0, 0x00, 0x00, 0xB4    ; cbz x0, +6
+    db 0x01, 0x80, 0x5F, 0xF8    ; ldur x1, [x0, #-8]
+    db 0x21, 0x20, 0x00, 0x91    ; add x1, x1, #8
+    db 0x00, 0x20, 0x00, 0xD1    ; sub x0, x0, #8
+    db 0xE8, 0x1A, 0x80, 0xD2    ; mov x8, #215 (sys_munmap)
+    db 0x01, 0x00, 0x00, 0xD4    ; svc #0
+    db 0xFD, 0x7B, 0xC1, 0xA8    ; ldp x29, x30, [sp], #16
+    db 0xC0, 0x03, 0x5F, 0xD6    ; ret
+.bytes_arm_free_end:
 
 
 emit_arm_div_zero_trap:
@@ -888,25 +937,44 @@ _stub_x86_alloc:
     push rbx
     push r12
 
-    mov rbx, rdi             ; size
-    add rbx, 7
-    and rbx, -8              ; align 8
+    mov rbx, rdi             ; rbx = n (requested size)
+    lea rsi, [rbx + 8]       ; rsi = n + 8 (mmap len)
 
-    xor rdi, rdi
-    mov rax, 12              ; sys_brk(0)
-    syscall                  ; rax = orig_brk
-
-    mov r12, rax             ; r12 = orig_brk
-    lea rdi, [rax + rbx]     ; new_brk = orig_brk + size
-    mov rax, 12              ; sys_brk(new_brk)
+    xor rdi, rdi             ; addr = 0
+    mov rdx, 3               ; prot = PROT_READ|PROT_WRITE
+    mov r10, 0x22            ; flags = MAP_PRIVATE|MAP_ANONYMOUS
+    mov r8, -1               ; fd = -1
+    xor r9, r9               ; offset = 0
+    mov rax, 9               ; sys_mmap = 9
     syscall
 
-    mov rax, r12             ; return orig_brk
+    mov [rax], rbx           ; store size n in header
+    add rax, 8               ; return ptr + 8
+
     pop r12
     pop rbx
     pop rbp
     ret
 _stub_x86_alloc_end:
+
+
+_stub_x86_free:
+    push rbp
+    mov rbp, rsp
+
+    test rdi, rdi
+    jz .free_done
+
+    mov rsi, [rdi - 8]       ; rsi = n
+    add rsi, 8               ; rsi = n + 8 (munmap len)
+    sub rdi, 8               ; rdi = ptr - 8 (munmap addr)
+    mov rax, 11              ; sys_munmap = 11
+    syscall
+
+.free_done:
+    pop rbp
+    ret
+_stub_x86_free_end:
 
 
 _stub_x86_format_int:
