@@ -6,7 +6,10 @@ root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ex_files = set()
 for p in glob.glob(os.path.join(root, "docs", "examples", "*.cap")):
     with open(p) as f:
-        ex_files.add(f.read().strip())
+        text = f.read()
+        if text.endswith("\n"):
+            text = text[:-1]
+        ex_files.add(text)
 
 failed = False
 for doc in ["README.md", "docs/LANGUAGE.md", "docs/GUIDE.md"]:
@@ -16,7 +19,9 @@ for doc in ["README.md", "docs/LANGUAGE.md", "docs/GUIDE.md"]:
     with open(path) as f:
         content = f.read()
     for i, block in enumerate(re.findall(r"```cap\n(.*?)```", content, re.DOTALL), 1):
-        b = block.strip()
+        b = block
+        if b.endswith("\n"):
+            b = b[:-1]
         if b not in ex_files:
             print(f"FAIL doc check {doc} block {i}:\n{b}\n")
             failed = True

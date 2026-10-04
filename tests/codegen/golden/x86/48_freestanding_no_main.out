@@ -1,1 +1,1 @@
-COMPILE_ERROR: NameError: main function not found
+COMPILE_ERROR: SyntaxError: freestanding targets require 'fn main()' or 'naked fn main()' (line 1)

@@ -26,6 +26,16 @@ Small hosted scripts need no `main` wrapper; CAP is not a Python subset. There a
 - A top-level variable is not visible inside a function. Referencing a top-level variable inside a function produces `NameError: undefined name 'x' (line N)` followed by the hint `top-level variables are not visible inside functions; pass 'x' as a parameter`.
 - Referencing an undefined variable that exists nowhere produces a single-line `NameError: undefined name 'x' (line N)` without a hint.
 
+```cap
+fn add(a, b):
+    return a + b
+
+x = 10
+y = 20
+sum = add(x, y)
+print(f"Sum: {sum}")
+```
+
 ## 2. Variables and Assignment
 
 - Variables are declared implicitly on first assignment: `x = 10`.
@@ -59,11 +69,66 @@ Precedence (tightest to loosest):
 - Using `break` outside an enclosing loop produces a compile-time `SyntaxError: 'break' outside loop (line N)`.
 - `/*/` begins a comment that runs to the end of the line.
 
+```cap
+for i in 3:
+    print(f"Count {i}")
+
+for i in range(2, 6, 2):
+    print(f"Step {i}")
+
+n = 3
+while (n > 0):
+    print(f"While {n}")
+    n = n - 1
+```
+
+```cap
+loop:
+    print("once")
+    break
+
+for i in 2:
+    loop:
+        print(f"Inner {i}")
+        break
+    print("Outer")
+```
+
+```cap
+/*/ Full-line comment
+x = 5 /*/ Trailing comment
+msg = "# Not a comment"
+print(f"Value: {x}") /*/ Comment in indented block
+print(msg)
+```
+
 ## 6. Structs & Memory Management
+
+```cap
+struct Point:
+    x: int
+    y: int
+
+p = Point{x: 5, y: 12}
+print(f"Point x={p.x}, y={p.y}")
+```
 
 - Field access: `p.x`.
 - `alloc(size)` allocates heap memory; `defer stmt` schedules deferred statements to run when the function returns, in reverse order.
 - `free(ptr)` currently crashes (segfault) and is not covered by any test. Do not use it yet (see Known Limitations in the README).
+
+```cap
+ptr = alloc(16)
+print("Allocated memory successfully")
+```
+
+```cap
+fn test():
+    defer print(2)
+    print(1)
+
+test()
+```
 
 ## 7. Builtin Functions, Input, and F-Strings
 
@@ -78,8 +143,23 @@ Supported x86-64 instructions in `asm:` blocks:
 - Registers: `rax`, `rbx`, `rcx`, `rdx`, `rsi`, `rdi`, `rbp`, `rsp`, `r8`..`r15`, `cr3`, segment registers (`ds`, `es`, `ss`).
 - Instructions: `mov`, `add`, `sub`, `and`, `or`, `xor`, `cmp`, `jmp`, `je`, `jne`, `jl`, `jle`, `jg`, `jge`, `call`, `ret`, `retfq`, `push`, `pop`, `in`, `out`, `stosq`, `shr`, `sar`, `shl`, `nop`, `cli`, `sti`, `hlt`, `lgdt`, `lidt`.
 
+```cap
+asm:
+    mov rax, 0x383420310A
+print("ASM block executed")
+```
+
 ## 9. Freestanding Mode Restrictions
 
 In `--freestanding` mode:
 - Hosted system calls (`print`, `input`, `alloc`, `free`) produce compile-time errors.
 - Hardware I/O is performed via `asm:` blocks or MMIO.
+
+```cap
+fn main():
+    asm:
+        mov dx, 0x3F8
+        mov al, 0x48
+        out dx, al
+    return 0
+```

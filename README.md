@@ -8,11 +8,12 @@ CAP is a compiled systems programming language featuring Python-like syntax, dyn
 - [3. Installation](#3-installation)
 - [4. Using the Compiler](#4-using-the-compiler)
 - [5. Language Reference Summary](#5-language-reference-summary)
-- [6. Freestanding and Kernel Mode](#6-freestanding-and-kernel-mode)
-- [7. Error Reference](#7-error-reference)
-- [8. Platform Support](#8-platform-support)
-- [9. Known Limitations and Roadmap](#9-known-limitations-and-roadmap)
-- [10. Project Layout and Building](#10-project-layout-and-building)
+- [6. Differences from Python](#6-differences-from-python)
+- [7. Freestanding and Kernel Mode](#7-freestanding-and-kernel-mode)
+- [8. Error Reference](#8-error-reference)
+- [9. Platform Support](#9-platform-support)
+- [10. Known Limitations and Roadmap](#10-known-limitations-and-roadmap)
+- [11. Project Layout and Building](#11-project-layout-and-building)
 
 ---
 
@@ -35,7 +36,7 @@ Small hosted scripts need no `main` wrapper; CAP is not a Python subset.
 
 Source file (`docs/examples/01_hello.cap`):
 ```cap
-    print("Hello, CAP v0.1.1!")
+print("Hello, CAP v0.1.1!")
 ```
 
 Compile and run:
@@ -100,6 +101,12 @@ capc [-a] [--freestanding|-k] [--boot-thin] [--no-boot-stub] [-o <outfile>] [--d
 
 Full specification available in [docs/LANGUAGE.md](docs/LANGUAGE.md).
 
+### Top-Level Scripts & Implicit Main
+Small hosted scripts do not require a `fn main():` wrapper. Top-level statements run sequentially. Functions and structs declared at top level are not executed directly and can be called from top-level code.
+
+### Implicit Return 0
+Hosted functions and top-level scripts that fall off the end automatically return `0`.
+
 ### Functions and Parameters
 ```cap
 fn add(a, b):
@@ -122,52 +129,57 @@ p = Point{x: 5, y: 12}
 print(f"Point x={p.x}, y={p.y}")
 ```
 
-### Control Flow
+### Loops and Control Flow
 ```cap
 x = 10
 if x > 5:
     print("Greater than 5")
 else:
     print("Less or equal")
+
+for i in 3:
+    print(f"Count {i}")
+
+for i in range(2, 6, 2):
+    print(f"Step {i}")
+
+n = 3
+while (n > 0):
+    print(f"While {n}")
+    n = n - 1
+
+loop:
+    print("once")
+    break
 ```
 
-### Bitwise Operators
+`for i in count:` is shorthand for `for i in range(count):`. `break` exits the enclosing `loop`, `while`, or `for` loop.
+
+### Comments
+Line comments begin with `/*/` and run to the end of the line:
 ```cap
-a = 0b1100
-b = 0b1010
-and_val = a & b
-or_val = a | b
-xor_val = a ^ b
-shl_val = a << 2
-print(f"AND: {and_val}, OR: {or_val}, XOR: {xor_val}, SHL: {shl_val}")
-```
-
-### Inline Assembly (`asm:`)
-```cap
-asm:
-    mov rax, 0x383420310A
-print("ASM block executed")
-```
-
-### Memory Management (`alloc`/`defer`)
-```cap
-ptr = alloc(16)
-print("Allocated memory successfully")
-```
-
-Deferred statements run when the function returns:
-
-```cap
-fn test():
-    defer print(2)
-    print(1)
-
-test()
+/*/ Full-line comment
+x = 5 /*/ Trailing comment
+msg = "# Not a comment"
+print(f"Value: {x}") /*/ Comment in indented block
+print(msg)
 ```
 
 ---
 
-## 6. Freestanding and Kernel Mode
+## 6. Differences from Python
+
+While CAP uses Python-style whitespace indentation and syntax:
+1. **Top-Level Variables:** Top-level variables are not visible inside functions (pass them as parameters).
+2. **No Globals:** There are no `global` or `nonlocal` keywords.
+3. **Struct Parameter Annotations:** Parameters accepting structs require explicit type annotations (e.g. `p: Point`), whereas scalar parameters are unannotated.
+4. **Freestanding Entry:** Freestanding targets (`--freestanding`) require an explicit `fn main():` or `naked fn main():`.
+5. **Comment Syntax:** Line comments begin with `/*/` rather than `#`.
+6. **Data Structures & Types:** CAP is a compiled systems language without built-in lists, dicts, garbage collection, or integers exceeding 64 bits.
+
+---
+
+## 7. Freestanding and Kernel Mode
 
 Freestanding mode generates raw bare-metal images bootable under QEMU system emulation (requires explicit `main`):
 
@@ -194,7 +206,7 @@ EXCEPTION: vector=0 err=0x0000000000000000 rip=0x0000000000100D64
 
 ---
 
-## 7. Error Reference
+## 8. Error Reference
 
 Complete diagnostic rules in [spec/errors.md](spec/errors.md).
 
@@ -209,7 +221,7 @@ Complete diagnostic rules in [spec/errors.md](spec/errors.md).
 
 ---
 
-## 8. Platform Support
+## 9. Platform Support
 
 Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 
@@ -221,7 +233,7 @@ Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 
 ---
 
-## 9. Known Limitations and Roadmap
+## 10. Known Limitations and Roadmap
 
 ### Known Limitations
 1. **Flow-Insensitive Variable Check:** Variable definition analysis is flow-insensitive; assigning a variable inside a conditional branch marks it as defined across the whole function body.
@@ -236,7 +248,7 @@ Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 
 ---
 
-## 10. Project Layout and Building
+## 11. Project Layout and Building
 
 ### Directory Structure
 - `src/`: NASM compiler source files.
@@ -255,4 +267,4 @@ Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 
 ### License
 Licensed under the [Apache License, Version 2.0](LICENSE).
-Copyright 2026 Hideyukiakaza.
+Copyright 2026 Devadath A A (aka Hideyukiakaza).

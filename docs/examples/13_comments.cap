@@ -1,0 +1,5 @@
+/*/ Full-line comment
+x = 5 /*/ Trailing comment
+msg = "# Not a comment"
+print(f"Value: {x}") /*/ Comment in indented block
+print(msg)

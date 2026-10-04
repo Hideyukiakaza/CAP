@@ -10,8 +10,11 @@
 - Bumped compiler version string to `capc 0.1.1`.
 
 ### Fixed
+- Fixed arithmetic type check to apply to the left operand as well as the right operand on x86-64 and ARM64.
 - Fixed `break` jump target resolution in nested loops and multiple `break` statements.
 - Fixed x86-64 `.s_for` stack frame isolation to prevent register corruption during statement code generation.
+- Fixed error message for freestanding mode missing `main` to `SyntaxError: freestanding targets require 'fn main()' or 'naked fn main()' (line 1)`.
+- Standardized lexer unexpected character error message format to `LexerError: unexpected character '<char>' (line <L>)`.
 
 ### Notes
 - Freestanding mode (`--freestanding`, `--boot-thin`, `--no-boot-stub`) continues to require an explicit `fn main` or `naked fn main`.

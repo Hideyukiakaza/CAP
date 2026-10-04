@@ -89,6 +89,21 @@ if x > 5:
     print("Greater than 5")
 else:
     print("Less or equal")
+
+for i in 3:
+    print(f"Count {i}")
+
+for i in range(2, 6, 2):
+    print(f"Step {i}")
+
+n = 3
+while (n > 0):
+    print(f"While {n}")
+    n = n - 1
+
+loop:
+    print("once")
+    break
 ```
 
 ## 6. Freestanding Kernel Mode

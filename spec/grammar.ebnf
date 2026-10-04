@@ -1,4 +1,4 @@
-(* CAP v0.1 Language Grammar EBNF & Specification Notes *)
+(* CAP v0.1.1 Language Grammar EBNF & Specification Notes *)
 
 program             = { statement } ;
 
@@ -50,6 +50,8 @@ asm_block_stmt      = "asm" , ":" , NEWLINE , INDENT , { asm_line } , DEDENT ;
 block               = NEWLINE , INDENT , statement_list , DEDENT ;
 statement_list      = statement , { statement } ;
 
+comment             = "/*/" , { any_char_except_newline } , NEWLINE ;
+
 expr                = equality_expr ;
 equality_expr       = relational_expr , { ( "==" | "!=" ) , relational_expr } ;
 relational_expr     = bitwise_or_expr , { ( "<" | ">" | "<=" | ">=" ) , bitwise_or_expr } ;
@@ -82,7 +84,7 @@ range_expr          = "range" , "(" , expr , [ "," , expr , [ "," , expr ] ] , "
 arg_list            = expr , { "," , expr } ;
 
 (*
---- CAP v0.1 Semantics & Hardware Behavior Notes ---
+--- CAP v0.1.1 Semantics & Hardware Behavior Notes ---
 
 1. Integer Overflow:
    - 64-bit signed integer arithmetic wraps around in standard two's-complement
@@ -101,4 +103,15 @@ arg_list            = expr , { "," , expr } ;
    - Nested struct fields take space equal to the inner struct's total size.
    - Field offsets for nested field accesses (e.g. outer.inner.a) compose additively
      from base struct layout offsets.
+
+5. Loop Semantics & Shorthand Counts:
+   - In `for IDENT in expr:`, if `expr` is not an explicit `range(...)` call, it is
+     desugared at pre-codegen into `range(expr)`.
+   - The iterable expression `expr` in `for IDENT in expr:` is evaluated ONCE before
+     the loop starts (e.g. `for i in (n + 1):` computes `n + 1` once).
+   - A count of 0 or negative count executes 0 iterations.
+   - For `range(start, stop, step)`: with positive step, loop terminates when `i >= stop`;
+     with negative step, loop terminates when `i <= stop`.
+   - `break` exits the innermost enclosing `loop`, `while`, or `for` loop, continuing
+     execution at the statement after the loop.
 *)
