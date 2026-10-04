@@ -1,0 +1,9 @@
+loop:
+    print("once")
+    break
+
+for i in 2:
+    loop:
+        print(f"Inner {i}")
+        break
+    print("Outer")

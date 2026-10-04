@@ -21,7 +21,8 @@ section .data
 err_tab: db "SyntaxError: Tabs are not allowed for indentation", 10, 0
 err_indent: db "SyntaxError: Indentation must be a multiple of 4 spaces", 10, 0
 err_mismatch_indent: db "SyntaxError: Unindent does not match any outer indentation level", 10, 0
-err_unexpected_char: db "LexerError: Unexpected character", 10, 0
+err_lexer_unexpected_char_1: db "LexerError: unexpected character '", 0
+err_lexer_unexpected_char_2: db "' (line ", 0
 err_unterm_string: db "LexerError: Unterminated string literal", 10, 0
 err_lexer_malformed_num_1: db "LexerError: malformed numeric literal '", 0
 err_lexer_malformed_num_2: db "' (line ", 0
@@ -238,13 +239,17 @@ tokenize_source:
     test rax, rax
     jnz .lex_loop
 
-    mov rsi, err_unexpected_char
+    mov rsi, err_lexer_unexpected_char_1
     call print_err
     mov rsi, [src_ptr]
-    mov dil, [rsi]
-    call print_char
-    mov dil, 10
-    call print_char
+    mov rdx, 1
+    call print_err_bytes
+    mov rsi, err_lexer_unexpected_char_2
+    call print_err
+    mov rdi, [line_num]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
     mov rdi, 1
     call sys_exit
 

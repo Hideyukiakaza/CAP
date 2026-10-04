@@ -26,6 +26,7 @@ endstruc
 
 section .data
 err_no_main: db "NameError: main function not found", 10, 0
+err_freestanding_no_main: db "SyntaxError: freestanding targets require 'fn main()' or 'naked fn main()' (line 1)", 10, 0
 s_main_name: db "main", 0
 s_zero_str: db "0", 0
 err_mix_top_main_1: db "SyntaxError: top-level statements cannot be mixed with 'fn main()'", 0
@@ -213,7 +214,7 @@ compile_program:
     mov rbx, [r12 + ASTNode.child1]
 .fs_find_main_loop:
     test rbx, rbx
-    jz .no_main_err
+    jz .no_main_err_fs
 
     cmp qword [rbx + ASTNode.type], AST_FN_DECL
     jne .fs_next_stmt
@@ -279,6 +280,12 @@ compile_program:
     pop rbx
     pop rbp
     ret
+
+.no_main_err_fs:
+    mov rsi, err_freestanding_no_main
+    call print_err
+    mov rdi, 1
+    call sys_exit
 
 .no_main_err:
     mov rsi, err_no_main
