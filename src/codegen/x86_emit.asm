@@ -1140,6 +1140,22 @@ x86_emit_stmt:
     mov esi, eax
     call emit_dword          ; store start
 
+    ; Store tag 1 for start: mov qword [rbp - (i_off + 8)], 1
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x85
+    call emit_byte
+    mov rax, rcx
+    add rax, 8
+    neg rax
+    mov esi, eax
+    call emit_dword
+    mov esi, 1
+    call emit_dword
+
     ; Evaluate stop (arg2)
     mov rdi, r10
     call x86_emit_expr

@@ -31,12 +31,13 @@ s_fstring: db "fstring", 0
 err_fstr_unexpected_colon: db "SyntaxError: unexpected ':' in f-string expression", 0
 err_fstr_unterminated: db "SyntaxError: unterminated f-string expression", 0
 s_newline: db 10, 0
+s_close_paren_nl: db ")", 10, 0
 
 section .text
 global parse_program
 extern tokenize_source, lexer_next_token, lexer_peek_token, lexer_rewind, lookup_keyword
 extern save_lexer_state, restore_lexer_state, malloc_bytes
-extern create_ast_node, print_err, print_str, sys_exit, sys_write, print_char, print_num
+extern create_ast_node, print_err, print_err_num, print_str, sys_exit, sys_write, print_char, print_num
 
 parse_program:
     push rbx
