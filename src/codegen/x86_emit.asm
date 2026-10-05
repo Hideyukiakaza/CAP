@@ -318,9 +318,11 @@ x86_emit_fn:
     call add_fn_symbol
 
     ; Check if this is main
+    cmp qword [r12 + ASTNode.val_len], 4
+    jne .not_main
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_main
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 4
     call str_ncmp
     test rax, rax
     jnz .not_main
@@ -2700,33 +2702,41 @@ x86_emit_expr:
 
 .e_call:
     ; Check print
+    cmp qword [r12 + ASTNode.val_len], 5
+    jne .chk_input
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_print
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 5
     call str_ncmp
     test rax, rax
     jz .call_print
 
-    ; Check input
+.chk_input:
+    cmp qword [r12 + ASTNode.val_len], 5
+    jne .chk_free
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_input
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 5
     call str_ncmp
     test rax, rax
     jz .call_input
 
-    ; Check free
+.chk_free:
+    cmp qword [r12 + ASTNode.val_len], 4
+    jne .chk_fstring
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_free
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 4
     call str_ncmp
     test rax, rax
     jz .call_free
 
-    ; Check fstring
+.chk_fstring:
+    cmp qword [r12 + ASTNode.val_len], 7
+    jne .user_call
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_fstring
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 7
     call str_ncmp
     test rax, rax
     jz .call_fstring

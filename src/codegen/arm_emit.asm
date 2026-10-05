@@ -1711,33 +1711,41 @@ arm_emit_expr:
 
 .e_call:
     ; Check print
+    cmp qword [r12 + ASTNode.val_len], 5
+    jne .chk_input
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_print_arm
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 5
     call str_ncmp
     test rax, rax
     jz .call_print
 
-    ; Check input
+.chk_input:
+    cmp qword [r12 + ASTNode.val_len], 5
+    jne .chk_free
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_input_arm
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 5
     call str_ncmp
     test rax, rax
     jz .call_input
 
-    ; Check free
+.chk_free:
+    cmp qword [r12 + ASTNode.val_len], 4
+    jne .chk_fstring
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_free_arm
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 4
     call str_ncmp
     test rax, rax
     jz .call_free
 
-    ; Check fstring
+.chk_fstring:
+    cmp qword [r12 + ASTNode.val_len], 7
+    jne .user_call
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_fstring_arm
-    mov rdx, [r12 + ASTNode.val_len]
+    mov rdx, 7
     call str_ncmp
     test rax, rax
     jz .call_fstring
