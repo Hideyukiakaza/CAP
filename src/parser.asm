@@ -25,6 +25,9 @@ err_expected_colon_ternary: db "SyntaxError: expected ':' in ternary", 0
 err_python_if_expr: db "SyntaxError: CAP uses 'cond ? a : b' for conditional expressions", 0
 err_expected_indent: db "SyntaxError: Expected indented block", 10, 0
 err_expected_ident: db "SyntaxError: Expected identifier after '.'", 10, 0
+err_inc_stmt_only: db "SyntaxError: '++' is only valid as a statement (line ", 0
+s_plus_str: db "+", 0
+s_one_str:  db "1", 0
 s_type_is: db "Token type: ", 0
 s_line_is: db "Token line: ", 0
 s_val_is: db "Token val: ", 0
@@ -353,6 +356,74 @@ parse_var_assign_or_expr_stmt:
     cmp qword [rax + Token.type], TOKEN_COLON
     je .handle_colon_decl
 
+    cmp qword [rax + Token.type], TOKEN_OP
+    jne .not_inc_decl
+
+    cmp qword [rax + Token.len], 2
+    jne .not_inc_decl
+
+    mov rdx, [rax + Token.val]
+    cmp byte [rdx], '+'
+    jne .not_inc_decl
+    cmp byte [rdx + 1], '+'
+    jne .not_inc_decl
+
+    ; --- Handle name++ statement ---
+    call lexer_next_token          ; consume '++'
+
+    ; Build AST_IDENT(name)
+    mov rdi, AST_IDENT
+    call create_ast_node
+    mov r12, rax
+    mov rdx, [rbx + Token.val]
+    mov rcx, [rbx + Token.len]
+    mov [r12 + ASTNode.val], rdx
+    mov [r12 + ASTNode.val_len], rcx
+    mov rcx, [rbx + Token.line]
+    mov [r12 + ASTNode.line], rcx
+
+    ; Build AST_LITERAL("1")
+    mov rdi, AST_LITERAL
+    call create_ast_node
+    mov r13, rax
+    mov qword [r13 + ASTNode.val], s_one_str
+    mov qword [r13 + ASTNode.val_len], 1
+    mov rcx, [rbx + Token.line]
+    mov [r13 + ASTNode.line], rcx
+
+    ; Build AST_BIN_OP("+")
+    mov rdi, AST_BIN_OP
+    call create_ast_node
+    mov r14, rax
+    mov qword [r14 + ASTNode.val], s_plus_str
+    mov qword [r14 + ASTNode.val_len], 1
+    mov [r14 + ASTNode.child1], r12
+    mov [r14 + ASTNode.child2], r13
+    mov rcx, [rbx + Token.line]
+    mov [r14 + ASTNode.line], rcx
+
+    ; Build AST_VAR_DECL(name)
+    mov rdi, AST_VAR_DECL
+    call create_ast_node
+    mov r15, rax
+    mov rdx, [rbx + Token.val]
+    mov rcx, [rbx + Token.len]
+    mov [r15 + ASTNode.val], rdx
+    mov [r15 + ASTNode.val_len], rcx
+    mov [r15 + ASTNode.child1], r14
+    mov rcx, [rbx + Token.line]
+    mov [r15 + ASTNode.line], rcx
+
+    push r15
+    call consume_optional_newline
+    pop rax
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.not_inc_decl:
     call lexer_rewind              ; rewind to IDENT
 
 .is_expr_stmt_fallback:
@@ -1360,6 +1431,9 @@ parse_unary_expr:
     cmp qword [rax + Token.type], TOKEN_OP
     jne .not_unary
 
+    cmp qword [rax + Token.len], 2
+    je .chk_prefix_inc
+
     mov rdx, [rax + Token.val]
     mov cl, [rdx]
     cmp cl, '-'
@@ -1369,6 +1443,24 @@ parse_unary_expr:
     cmp cl, '~'
     je .is_un_op
     jmp .not_unary
+
+.chk_prefix_inc:
+    mov rdx, [rax + Token.val]
+    cmp byte [rdx], '+'
+    jne .not_unary
+    cmp byte [rdx + 1], '+'
+    jne .not_unary
+
+    push rax
+    mov rsi, err_inc_stmt_only
+    call print_err
+    pop rax
+    mov rdi, [rax + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
 
 .is_un_op:
     call lexer_next_token
@@ -1699,7 +1791,37 @@ parse_primary_expr:
     je .postfix_dot
     cmp rcx, TOKEN_LBRACKET
     je .postfix_index
+    cmp rcx, TOKEN_OP
+    je .chk_postfix_inc
 
+    mov rax, rbx
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.chk_postfix_inc:
+    cmp qword [rax + Token.len], 2
+    jne .postfix_done
+    mov rdx, [rax + Token.val]
+    cmp byte [rdx], '+'
+    jne .postfix_done
+    cmp byte [rdx + 1], '+'
+    jne .postfix_done
+
+    push rax
+    mov rsi, err_inc_stmt_only
+    call print_err
+    pop rax
+    mov rdi, [rax + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.postfix_done:
     mov rax, rbx
     pop r13
     pop r12
