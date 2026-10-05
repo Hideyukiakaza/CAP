@@ -153,7 +153,7 @@ loop:
     break
 ```
 
-`for i in count:` is shorthand for `for i in range(count):`. `break` exits the enclosing `loop`, `while`, or `for` loop.
+`for i in count:` is shorthand for `for i in range(count):`. `break` exits the enclosing `loop`, `while`, or `for` loop. Ternary conditional expressions `cond ? a : b` and f-string sub-expressions inside `{...}` are supported.
 
 ### Comments
 Line comments begin with `/*/` and run to the end of the line:
@@ -238,8 +238,7 @@ Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 ### Known Limitations
 1. **Flow-Insensitive Variable Check:** Variable definition analysis is flow-insensitive; assigning a variable inside a conditional branch marks it as defined across the whole function body.
 2. **QEMU RIP Report on Non-Canonical `ret`:** QEMU's x86_64 CPU model records the target non-canonical address on the `#GP` stack frame upon `ret` to non-canonical space; real hardware behavior is unverified and not guaranteed.
-3. **Freestanding Mode Restricted Builtins:** `print`, `input`, and `alloc` produce compile-time errors in freestanding mode.
-4. **`free(ptr)` Crashes:** Calling `free` on a pointer returned by `alloc` currently segfaults, and no test covers it. Avoid `free` until this is fixed.
+3. **Freestanding Mode Restricted Builtins:** `print`, `input`, `alloc`, and `free` produce compile-time errors in freestanding mode.
 
 ### Roadmap (Unpromised Project Directions)
 - Native macOS and Windows executable backends.

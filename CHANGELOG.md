@@ -7,6 +7,9 @@
 - Implicit return 0 for non-naked hosted functions.
 - Shorthand count syntax for `for` loops (`for i in count:` / `for i in expr:` as shorthand for `range(expr)`).
 - `break` statement support inside `for`, `while`, and `loop` constructs with semantic validation disallowing `break` outside loops.
+- F-string expression span scanning inside `{...}` supporting nested string literals, parentheses, braces, and stray `:` error detection.
+- C-Style ternary conditional operator `cond ? a : b` with right-associativity, lazy branch evaluation, string and integer truthiness checks, and result tag preservation.
+- Differential test runner `tests/diff/run_diff.py` verifying x86-64 and ARM64 output equivalence.
 - Bumped compiler version string to `capc 0.1.1`.
 
 ### Fixed

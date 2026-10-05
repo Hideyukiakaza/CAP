@@ -17,6 +17,10 @@ Compile-time errors occur during tokenization, parsing, or semantic analysis/cod
 | `SyntaxError` | `SyntaxError: freestanding targets require 'fn main()' or 'naked fn main()' (line 1)` | Compiling for freestanding mode without an explicit `fn main` or `naked fn main` declaration. |
 | `SyntaxError` | `SyntaxError: top-level statements cannot be mixed with 'fn main()' (line <L>)` | Mixing executable top-level statements with an explicit `fn main()` declaration. |
 | `SyntaxError` | `SyntaxError: 'break' outside loop (line <L>)` | Using a `break` statement outside an enclosing `loop`, `while`, or `for` loop. |
+| `SyntaxError` | `SyntaxError: unexpected ':' in f-string expression (line <L>)` | Stray `:` token at depth 0 inside an f-string expression span `{...}`. |
+| `SyntaxError` | `SyntaxError: unterminated f-string expression (line <L>)` | Unclosed f-string expression span `{...}` before string termination. |
+| `SyntaxError` | `SyntaxError: expected ':' in conditional expression (line <L>)` | Missing `:` in ternary conditional expression `cond ? a : b`. |
+| `SyntaxError` | `SyntaxError: CAP uses 'cond ? a : b' for conditional expressions (line <L>)` | Attempting Python-style `a if c else b` expression context. |
 | `NameError` | `NameError: undefined name '<var_name>' (line <L>)` | Variable referenced before assignment or definition in function scope (textual order). Includes hint `top-level variables are not visible inside functions; pass '<var_name>' as a parameter` if the name exists at top level. |
 | `NameError` | `NameError: undefined function '<fn_name>' (line <L>)` | Function called without being declared or builtin. |
 | `NameError` | `NameError: main function not found` | Source file lacks a top-level `main` function declaration in decls-only hosted mode. |

@@ -1263,7 +1263,21 @@ semantic_check_expr:
     je .e_alloc
     cmp rax, AST_INDEX
     je .e_index
+    cmp rax, AST_TERNARY
+    je .e_ternary
 
+    jmp .expr_done
+
+.e_ternary:
+    mov rdi, r12
+    mov rsi, [r13 + ASTNode.child1]
+    call semantic_check_expr
+    mov rdi, r12
+    mov rsi, [r13 + ASTNode.child2]
+    call semantic_check_expr
+    mov rdi, r12
+    mov rsi, [r13 + ASTNode.child3]
+    call semantic_check_expr
     jmp .expr_done
 
 .e_ident:

@@ -21,6 +21,8 @@ default rel
 section .data
 err_syntax: db "SyntaxError: Unexpected token", 10, 0
 err_expected_colon: db "SyntaxError: Expected ':'", 10, 0
+err_expected_colon_ternary: db "SyntaxError: expected ':' in ternary", 0
+err_python_if_expr: db "SyntaxError: CAP uses 'cond ? a : b' for conditional expressions", 0
 err_expected_indent: db "SyntaxError: Expected indented block", 10, 0
 err_expected_ident: db "SyntaxError: Expected identifier after '.'", 10, 0
 s_type_is: db "Token type: ", 0
@@ -28,12 +30,16 @@ s_line_is: db "Token line: ", 0
 s_val_is: db "Token val: ", 0
 s_prog_peek: db "Program peek token type: ", 0
 s_fstring: db "fstring", 0
+err_fstr_unexpected_colon: db "SyntaxError: unexpected ':' in f-string expression", 0
+err_fstr_unterminated: db "SyntaxError: unterminated f-string expression", 0
+s_newline: db 10, 0
+s_close_paren_nl: db ")", 10, 0
 
 section .text
 global parse_program
 extern tokenize_source, lexer_next_token, lexer_peek_token, lexer_rewind, lookup_keyword
 extern save_lexer_state, restore_lexer_state, malloc_bytes
-extern create_ast_node, print_err, print_str, sys_exit, sys_write, print_char, print_num
+extern create_ast_node, print_err, print_err_num, print_str, sys_exit, sys_write, print_char, print_num
 
 parse_program:
     push rbx
@@ -893,7 +899,87 @@ parse_block:
     ret
 
 parse_expr:
+    call parse_ternary_expr
+    ret
+
+parse_ternary_expr:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+
     call parse_equality_expr
+    mov rbx, rax
+
+    call lexer_peek_token
+    mov r12, rax
+    cmp qword [r12 + Token.type], TOKEN_KEYWORD
+    jne .chk_question
+
+    mov rsi, [r12 + Token.val]
+    mov rdx, [r12 + Token.len]
+    call lookup_keyword
+    cmp rax, KW_IF
+    jne .chk_question
+
+    ; Python-style 'if' expression rejected
+    mov rsi, err_python_if_expr
+    call print_err
+    mov rdi, [r12 + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.chk_question:
+    cmp qword [r12 + Token.type], TOKEN_OP
+    jne .ternary_done
+
+    mov rdx, [r12 + Token.val]
+    mov rcx, [r12 + Token.len]
+    cmp rcx, 1
+    jne .ternary_done
+    cmp byte [rdx], '?'
+    jne .ternary_done
+
+    call lexer_next_token          ; consume '?'
+    call parse_expr
+    mov r13, rax                   ; true branch (child2)
+
+    call lexer_peek_token
+    mov r12, rax
+    cmp qword [r12 + Token.type], TOKEN_COLON
+    je .has_colon
+
+    mov rsi, err_expected_colon_ternary
+    call print_err
+    mov rdi, [r12 + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.has_colon:
+    call lexer_next_token          ; consume ':'
+    call parse_ternary_expr
+    mov r12, rax                   ; false branch (child3)
+
+    mov rdi, AST_TERNARY
+    call create_ast_node
+    mov [rax + ASTNode.child1], rbx ; cond
+    mov [rax + ASTNode.child2], r13 ; true branch
+    mov [rax + ASTNode.child3], r12 ; false branch
+    mov rbx, rax
+
+.ternary_done:
+    mov rax, rbx
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
     ret
 
 parse_equality_expr:
@@ -1832,27 +1918,122 @@ parse_fstring:
     add r8, rcx              ; expr_start_ptr
     xor r9, r9               ; expr_len = 0
     mov r10, 1               ; brace_depth = 1
+    xor r11, r11             ; in_str = 0
+    push r14
+    push r15
+    xor r14, r14             ; paren_depth = 0
+    xor r15, r15             ; question_depth = 0
 
 .scan_close:
     cmp rcx, r13
-    jge .finish_expr_span
+    jge .check_unterminated
+
     mov al, [r12 + rcx]
+
+    test r11, r11
+    jnz .in_string_mode
+
+    cmp al, '"'
+    je .enter_string_mode
+
+    cmp al, '('
+    je .inc_paren
+    cmp al, ')'
+    je .dec_paren
+
     cmp al, '{'
-    jne .chk_rbrace
+    je .inc_brace
+    cmp al, '}'
+    je .chk_rbrace
+
+    cmp al, '?'
+    je .chk_question
+
+    cmp al, ':'
+    je .chk_colon
+
+    jmp .inc_expr
+
+.enter_string_mode:
+    mov r11, 1
+    jmp .inc_expr
+
+.in_string_mode:
+    cmp al, '"'
+    jne .inc_expr
+    xor r11, r11
+    jmp .inc_expr
+
+.inc_paren:
+    inc r14
+    jmp .inc_expr
+
+.dec_paren:
+    test r14, r14
+    jz .inc_expr
+    dec r14
+    jmp .inc_expr
+
+.inc_brace:
     inc r10
     jmp .inc_expr
+
 .chk_rbrace:
-    cmp al, '}'
-    jne .inc_expr
     dec r10
     jz .finish_expr_span
+    jmp .inc_expr
+
+.chk_question:
+    test r14, r14
+    jnz .inc_expr
+    cmp r10, 1
+    jne .inc_expr
+    inc r15                  ; question_depth++
+    jmp .inc_expr
+
+.chk_colon:
+    test r14, r14
+    jnz .inc_expr
+    cmp r10, 1
+    jne .inc_expr
+
+    test r15, r15
+    jnz .match_question
+
+    ; Stray ':' at depth 0
+    mov rsi, err_fstr_unexpected_colon
+    call print_err
+    mov rdi, [rbx + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.match_question:
+    dec r15
+    jmp .inc_expr
 
 .inc_expr:
     inc rcx
     inc r9
     jmp .scan_close
 
+.check_unterminated:
+    test r10, r10
+    jz .finish_expr_span
+    mov rsi, err_fstr_unterminated
+    call print_err
+    mov rdi, [rbx + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
 .finish_expr_span:
+    pop r15
+    pop r14
     cmp rcx, r13
     jge .done_expr_parse
     inc rcx                  ; skip '}'

@@ -58,6 +58,7 @@ Precedence (tightest to loosest):
 7. Bitwise OR: `|`
 8. Relational: `<`, `>`, `<=`, `>=`
 9. Equality: `==`, `!=`
+10. Ternary Conditional: `cond ? true_expr : false_expr` (right-associative)
 
 ## 5. Control Flow & Loops
 
@@ -114,8 +115,8 @@ print(f"Point x={p.x}, y={p.y}")
 ```
 
 - Field access: `p.x`.
-- `alloc(size)` allocates heap memory; `defer stmt` schedules deferred statements to run when the function returns, in reverse order.
-- `free(ptr)` currently crashes (segfault) and is not covered by any test. Do not use it yet (see Known Limitations in the README).
+- `alloc(size)` allocates header-backed heap memory via anonymous `mmap`.
+- `free(ptr)` releases the `mmap` block via `munmap`.
 
 ```cap
 ptr = alloc(16)
@@ -136,6 +137,8 @@ test()
 - `input()`: Reads a line from stdin. A prompt string is permitted: `input("Enter your name: ")`.
 - **Runtime Type Conversion for `input()`:** Integer-shaped text is assigned INT (tag 1), float-shaped text is assigned FLOAT (tag 2), and any other text is assigned STRING (tag 3). For an integer line, `a + 5` works directly without requiring an explicit `int()` conversion call. Float arithmetic is not implemented, and a float tag does not make `n * 2` work.
 - F-strings: `f"x = {x}"`. Double braces `{{` and `}}` unescape to literal `{` and `}`.
+- **F-string Expression Spans:** Expressions within `{ ... }` support sub-expressions including string literals, parentheses, and ternary operators: `f"status: {(a == 0) ? "zero" : "non-zero"}"`.
+- **C-Style Ternary Operator (`cond ? a : b`):** CAP supports right-associative conditional expressions `cond ? a : b`. Python-style `a if c else b` produces `SyntaxError: CAP uses 'cond ? a : b' for conditional expressions (line N)`.
 
 ## 8. Inline Assembly (`asm:`)
 

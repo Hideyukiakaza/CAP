@@ -24,6 +24,7 @@ s_main_arm:              db "main", 0
 s_print_arm:             db "print", 0
 s_input_arm:             db "input", 0
 s_fstring_arm:           db "fstring", 0
+s_free_arm:              db "free", 0
 s_svc:                   db "svc", 0
 s_ret_arm:               db "ret", 0
 s_mov_arm:               db "mov", 0
@@ -31,7 +32,7 @@ s_mov_arm:               db "mov", 0
 section .text
 global arm_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int
+extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int
 extern sym_init, add_symbol, add_symbol_type, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol, find_symbol_entry
@@ -44,6 +45,7 @@ struc ArmState
     .div_zero_off:      resq 1
     .overflow_off:      resq 1
     .alloc_off:         resq 1
+    .free_off:          resq 1
     .input_off:         resq 1
     .type_mismatch_off:  resq 1
     .format_int_off:    resq 1
@@ -119,6 +121,11 @@ arm_emit_program:
     mov [armstate + ArmState.alloc_off], rax
     mov rdi, r13
     call emit_arm_alloc
+
+    mov rax, [r13 + 16]
+    mov [armstate + ArmState.free_off], rax
+    mov rdi, r13
+    call emit_arm_free
 
     mov rax, [r13 + 16]
     mov [armstate + ArmState.input_off], rax
@@ -1119,6 +1126,83 @@ arm_emit_expr:
     je .e_alloc
     cmp rax, AST_FIELD_ACCESS
     je .e_field_access
+    cmp rax, AST_TERNARY
+    je .e_ternary
+    jmp .done
+
+.e_ternary:
+    push r12                 ; save outer AST_TERNARY node
+
+    mov rdi, [r12 + ASTNode.child1]
+    call arm_emit_expr       ; x0 = val, x1 = tag
+
+    ; Truthiness check: cmp x1, #3 (STRING tag) -> 0xF1000C3F
+    EMIT_ARM 0xF1000C3F
+    ; b.eq .t_str_chk_arm (+2 words -> 0x54000040)
+    EMIT_ARM 0x54000040
+
+    ; Non-string truthiness: cmp x0, #0 -> 0xF100001F
+    EMIT_ARM 0xF100001F
+    ; b .t_branch_test_arm (+2 words -> 0x14000002)
+    EMIT_ARM 0x14000002
+
+.t_str_chk_arm:
+    ; String truthiness: ldrb w0, [x0] -> 0x39400000
+    EMIT_ARM 0x39400000
+    ; cmp x0, #0 -> 0xF100001F
+    EMIT_ARM 0xF100001F
+
+.t_branch_test_arm:
+    ; b.eq false_branch_arm (0x54000000 - placeholder)
+    mov rbx, [r13 + 16]      ; offset
+    push rbx
+    EMIT_ARM 0x54000000
+
+    ; True branch: evaluate child2
+    mov r12, [rsp + 8]       ; restore r12 from stack
+    mov rdi, [r12 + ASTNode.child2]
+    call arm_emit_expr
+
+    ; b end_ternary_arm (0x14000000 - placeholder)
+    mov r10, [r13 + 16]
+    push r10
+    EMIT_ARM 0x14000000
+
+    ; Patch b.eq (false_branch_arm start)
+    mov rax, [r13 + 16]
+    pop r10                  ; re-push b offset
+    pop rbx                  ; b.eq offset
+    push r10
+    sub rax, rbx
+    sar rax, 2               ; word offset
+    and eax, 0x7FFFF
+    shl eax, 5
+    mov r8d, 0x54000000
+    or eax, r8d
+    mov rdi, r13
+    mov rsi, rbx
+    mov edx, eax
+    call patch_dword
+
+    ; False branch: evaluate child3
+    mov r12, [rsp + 8]       ; restore r12 from stack
+    mov rdi, [r12 + ASTNode.child3]
+    call arm_emit_expr
+
+    ; Patch b (end_ternary_arm)
+    mov rax, [r13 + 16]
+    pop r10                  ; b offset
+    sub rax, r10
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x14000000
+    or eax, r8d
+    mov rdi, r13
+    mov rsi, r10
+    mov edx, eax
+    call patch_dword
+
+    pop r12                  ; restore r12
     jmp .done
 
 .e_alloc:
@@ -1479,8 +1563,8 @@ arm_emit_expr:
 
     ; sdiv x3, x2, x0 -> 0x9AC00C43
     EMIT_ARM 0x9AC00C43
-    ; msub x0, x3, x0, x2 -> 0x9B008060
-    EMIT_ARM 0x9B008060
+    ; msub x0, x3, x0, x2 -> 0x9B008860
+    EMIT_ARM 0x9B008860
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
     jmp .done
@@ -1642,6 +1726,14 @@ arm_emit_expr:
     test rax, rax
     jz .call_input
 
+    ; Check free
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_free_arm
+    mov rdx, [r12 + ASTNode.val_len]
+    call str_ncmp
+    test rax, rax
+    jz .call_free
+
     ; Check fstring
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_fstring_arm
@@ -1739,6 +1831,20 @@ arm_emit_expr:
     EMIT_ARM 0xF84107E0
     ; mov x1, #3 -> 0xD2800061 (STRING tag)
     EMIT_ARM 0xD2800061
+    jmp .done
+
+.call_free:
+    mov rdi, [r12 + ASTNode.child1]
+    call arm_emit_expr        ; x0 = ptr, x1 = tag
+
+    ; bl free_off
+    mov rax, [armstate + ArmState.free_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax
     jmp .done
 
 .call_input:

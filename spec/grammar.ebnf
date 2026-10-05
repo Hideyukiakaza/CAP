@@ -52,7 +52,8 @@ statement_list      = statement , { statement } ;
 
 comment             = "/*/" , { any_char_except_newline } , NEWLINE ;
 
-expr                = equality_expr ;
+expr                = ternary_expr ;
+ternary_expr        = equality_expr , [ "?" , expr , ":" , ternary_expr ] ;
 equality_expr       = relational_expr , { ( "==" | "!=" ) , relational_expr } ;
 relational_expr     = bitwise_or_expr , { ( "<" | ">" | "<=" | ">=" ) , bitwise_or_expr } ;
 bitwise_or_expr     = bitwise_xor_expr , { "|" , bitwise_xor_expr } ;
@@ -69,6 +70,7 @@ postfix_op          = "." , IDENT
                     | "(" , [ arg_list ] , ")" ;
 
 primary_base        = LITERAL
+                    | FSTRING
                     | IDENT
                     | struct_lit
                     | alloc_expr

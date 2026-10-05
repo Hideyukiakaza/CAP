@@ -767,17 +767,69 @@ check_ident_or_dot:
     ret
 
 lex_fstring:
+    push rbx
+    push r12
+    push r13
     mov rsi, [src_ptr]
     xor rcx, rcx
     add rcx, 2               ; skip f"
+    xor r12, r12             ; brace_depth = 0
+    xor r13, r13             ; in_str = 0
+
 .fstr_loop:
     mov al, [rsi + rcx]
     test al, al
     jz .err_fstr
     cmp al, 10
     je .err_fstr
+
+    test r13, r13
+    jnz .fstr_in_str
+
     cmp al, '"'
-    je .fstr_done
+    je .fstr_chk_quote
+    cmp al, '{'
+    je .fstr_open
+    cmp al, '}'
+    je .fstr_close
+    inc rcx
+    jmp .fstr_loop
+
+.fstr_in_str:
+    cmp al, '"'
+    jne .fstr_in_str_next
+    xor r13, r13             ; exited string
+.fstr_in_str_next:
+    inc rcx
+    jmp .fstr_loop
+
+.fstr_chk_quote:
+    test r12, r12
+    jz .fstr_done            ; quote at brace depth 0 ends f-string
+    mov r13, 1               ; quote at brace depth > 0 enters string mode
+    inc rcx
+    jmp .fstr_loop
+
+.fstr_open:
+    cmp byte [rsi + rcx + 1], '{'
+    jne .fstr_single_open
+    add rcx, 2               ; escaped {{
+    jmp .fstr_loop
+.fstr_single_open:
+    inc r12                  ; brace_depth++
+    inc rcx
+    jmp .fstr_loop
+
+.fstr_close:
+    cmp byte [rsi + rcx + 1], '}'
+    jne .fstr_single_close
+    add rcx, 2               ; escaped }}
+    jmp .fstr_loop
+.fstr_single_close:
+    test r12, r12
+    jz .fstr_close_next
+    dec r12                  ; brace_depth--
+.fstr_close_next:
     inc rcx
     jmp .fstr_loop
 
@@ -788,6 +840,9 @@ lex_fstring:
     mov rdx, rcx
     call emit_token
     add [src_ptr], rcx
+    pop r13
+    pop r12
+    pop rbx
     ret
 
 .err_fstr:
@@ -985,6 +1040,8 @@ lex_operator_or_punct:
     cmp al, '^'
     je .t_op
     cmp al, '~'
+    je .t_op
+    cmp al, '?'
     je .t_op
 
     xor rax, rax
