@@ -958,6 +958,8 @@ lex_operator_or_punct:
 
 .check_2char:
     mov bl, [rsi + 1]
+    cmp al, '+'
+    je .c_plus
     cmp al, '='
     je .c_eq
     cmp al, '!'
@@ -967,6 +969,11 @@ lex_operator_or_punct:
     cmp al, '>'
     je .c_ge
     jmp .check_1char
+
+.c_plus:
+    cmp bl, '+'
+    jne .check_1char
+    jmp .emit_2char_op
 
 .c_eq:
     cmp bl, '='
