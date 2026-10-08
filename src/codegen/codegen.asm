@@ -66,6 +66,7 @@ s_builtin_alloc:    db "alloc", 0
 s_builtin_free:     db "free", 0
 s_builtin_range:    db "range", 0
 s_builtin_fstring:  db "fstring", 0
+s_builtin_len:      db "len", 0
 
 section .text
 global compile_program
@@ -1650,6 +1651,11 @@ is_builtin_name:
     jnz .b_yes
 
     mov rsi, s_builtin_fstring
+    call check_match
+    test rax, rax
+    jnz .b_yes
+
+    mov rsi, s_builtin_len
     call check_match
     test rax, rax
     jnz .b_yes

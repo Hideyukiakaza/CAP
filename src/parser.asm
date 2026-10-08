@@ -26,6 +26,7 @@ err_python_if_expr: db "SyntaxError: CAP uses 'cond ? a : b' for conditional exp
 err_expected_indent: db "SyntaxError: Expected indented block", 10, 0
 err_expected_ident: db "SyntaxError: Expected identifier after '.'", 10, 0
 err_inc_stmt_only: db "SyntaxError: '++' is only valid as a statement (line ", 0
+err_index_assign_not_supported: db "SyntaxError: index assignment is not supported (line ", 0
 s_plus_str: db "+", 0
 s_one_str:  db "1", 0
 s_type_is: db "Token type: ", 0
@@ -445,6 +446,9 @@ parse_var_assign_or_expr_stmt:
     call parse_expr
     mov r12, rax                   ; r12 = rhs_expr
 
+    cmp qword [rbx + ASTNode.type], AST_INDEX
+    je .err_index_assign
+
     cmp qword [rbx + ASTNode.type], AST_FIELD_ACCESS
     je .make_field_assign
 
@@ -457,6 +461,16 @@ parse_var_assign_or_expr_stmt:
     mov [r13 + ASTNode.val_len], rcx
     mov [r13 + ASTNode.child1], r12 ; child1 = RHS
     jmp .done_assign_node
+
+.err_index_assign:
+    mov rsi, err_index_assign_not_supported
+    call print_err
+    mov rdi, [rbx + ASTNode.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
 
 .make_field_assign:
     mov rdi, AST_FIELD_ASSIGN
@@ -1508,6 +1522,8 @@ parse_primary_expr:
     je .p_ident_or_call_or_struct
     cmp rcx, TOKEN_LPAREN
     je .p_paren
+    cmp rcx, TOKEN_LBRACKET
+    je .p_list_lit
 
     push rbx
     mov rsi, err_syntax
@@ -1781,6 +1797,67 @@ parse_primary_expr:
     call parse_expr
     mov rbx, rax
     call lexer_next_token
+    jmp .postfix_loop
+
+.p_list_lit:
+    push r14
+    push r15
+    call lexer_next_token          ; consume '['
+    xor r12, r12                   ; element head = NULL
+    xor r13, r13                   ; element tail = NULL
+
+.list_elem_loop:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_RBRACKET
+    je .done_list_elems
+
+    call parse_expr
+    mov r14, rax                   ; element expr node
+
+    test r13, r13
+    jnz .app_list_elem
+    mov r12, r14
+    mov r13, r14
+    jmp .chk_list_comma
+
+.app_list_elem:
+    mov [r13 + ASTNode.next], r14
+    mov r13, r14
+
+.chk_list_comma:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_COMMA
+    jne .check_list_close
+
+    call lexer_next_token          ; consume ','
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_RBRACKET
+    je .err_trailing_comma          ; trailing comma before ']' is SyntaxError
+    jmp .list_elem_loop
+
+.check_list_close:
+    cmp qword [rax + Token.type], TOKEN_RBRACKET
+    je .done_list_elems
+
+    mov rsi, err_syntax
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.err_trailing_comma:
+    mov rsi, err_syntax
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.done_list_elems:
+    call lexer_next_token          ; consume ']'
+    mov rdi, AST_LIST_LIT
+    call create_ast_node
+    mov [rax + ASTNode.child1], r12
+    pop r15
+    pop r14
+    mov rbx, rax
     jmp .postfix_loop
 
 .postfix_loop:
