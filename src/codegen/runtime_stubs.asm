@@ -18,8 +18,8 @@ default rel
 %include "src/codegen/target.inc"
 
 section .text
-global emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int
-global emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int
+global emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list
+global emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list
 extern emit_bytes
 
 emit_x86_print_int:
@@ -48,6 +48,36 @@ emit_x86_print_str:
 
     lea rsi, [rel _stub_x86_print_str]
     mov rdx, _stub_x86_print_str_end - _stub_x86_print_str
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+emit_x86_print_list:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel _stub_x86_print_list]
+    mov rdx, _stub_x86_print_list_end - _stub_x86_print_list
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+emit_x86_oob_trap:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel _stub_x86_oob]
+    mov rdx, _stub_x86_oob_end - _stub_x86_oob
     mov rdi, r12
     call emit_bytes
 
@@ -303,7 +333,7 @@ emit_arm_format_int:
     db 0x6A, 0x00, 0x00, 0x54
     db 0x30, 0x00, 0x80, 0xD2
     db 0xE9, 0x03, 0x09, 0xCB
-    db 0xEF, 0xBF, 0x00, 0x91
+    db 0xEF, 0x03, 0x00, 0x91
     db 0x0C, 0x00, 0x80, 0xD2
     db 0x4D, 0x01, 0x80, 0xD2
     db 0x2E, 0x09, 0xCD, 0x9A
@@ -712,6 +742,132 @@ _stub_x86_print_str:
 _stub_x86_print_str_end:
 
 
+_stub_x86_print_list:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi              ; r12 = list_ptr
+    test r12, r12
+    jz .pl_done
+
+    sub rsp, 16
+    mov byte [rsp], 0x5B
+    mov rdi, 1
+    mov rsi, rsp
+    mov rdx, 1
+    mov rax, 1
+    syscall
+    add rsp, 16
+
+    mov r13, [r12]
+    xor r14, r14
+
+.pl_elem_loop:
+    cmp r14, r13
+    jge .pl_loop_done
+
+    mov rbx, r14
+    shl rbx, 4
+    add rbx, r12
+    add rbx, 16
+    mov r15, [rbx]
+    mov rcx, [rbx + 8]
+
+    cmp rcx, 3
+    je .pl_elem_str
+    cmp rcx, 4
+    je .pl_elem_list
+
+    mov rdi, r15
+    sub rsp, 64
+    lea rsi, [rsp + 32]
+    call _stub_x86_format_int
+    mov rdx, rax
+    mov rdi, 1
+    mov rax, 1
+    syscall
+    add rsp, 64
+    jmp .pl_check_comma
+
+.pl_elem_str:
+    sub rsp, 16
+    mov byte [rsp], 0x22
+    mov rdi, 1
+    mov rsi, rsp
+    mov rdx, 1
+    mov rax, 1
+    syscall
+    add rsp, 16
+
+    mov rdi, r15
+    xor rdx, rdx
+.pl_str_len:
+    cmp byte [rdi + rdx], 0
+    je .pl_str_write
+    inc rdx
+    jmp .pl_str_len
+.pl_str_write:
+    mov rsi, r15
+    mov rdi, 1
+    mov rax, 1
+    syscall
+
+    sub rsp, 16
+    mov byte [rsp], 0x22
+    mov rdi, 1
+    mov rsi, rsp
+    mov rdx, 1
+    mov rax, 1
+    syscall
+    add rsp, 16
+    jmp .pl_check_comma
+
+.pl_elem_list:
+    mov rdi, r15
+    call _stub_x86_print_list
+    jmp .pl_check_comma
+
+.pl_check_comma:
+    inc r14
+    cmp r14, r13
+    jge .pl_loop_done
+
+    sub rsp, 16
+    mov word [rsp], 0x202C
+    mov rdi, 1
+    mov rsi, rsp
+    mov rdx, 2
+    mov rax, 1
+    syscall
+    add rsp, 16
+    jmp .pl_elem_loop
+
+.pl_loop_done:
+    sub rsp, 16
+    mov byte [rsp], 0x5D
+    mov rdi, 1
+    mov rsi, rsp
+    mov rdx, 1
+    mov rax, 1
+    syscall
+    add rsp, 16
+
+.pl_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+_stub_x86_print_list_end:
+
+
 _stub_x86_div_zero:
     mov rdi, 2          ; STDERR
     lea rsi, [rel .msg]
@@ -723,6 +879,19 @@ _stub_x86_div_zero:
     syscall
 .msg: db "RuntimeError: division by zero", 10
 _stub_x86_div_zero_end:
+
+
+_stub_x86_oob:
+    mov rdi, 2          ; STDERR
+    lea rsi, [rel .msg]
+    mov rdx, 32         ; len ("RuntimeError: index out of range\n")
+    mov rax, 1          ; sys_write
+    syscall
+    mov rdi, 101        ; exit code 101
+    mov rax, 60         ; sys_exit
+    syscall
+.msg: db "RuntimeError: index out of range", 10
+_stub_x86_oob_end:
 
 
 _stub_x86_overflow:
@@ -930,6 +1099,148 @@ _stub_x86_input:
     ret
 _stub_x86_input_end:
 
+emit_arm_oob_trap:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel .bytes_arm_oob]
+    mov rdx, .bytes_arm_oob_end - .bytes_arm_oob
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+.bytes_arm_oob:
+    db 0x40, 0x00, 0x80, 0xD2
+    db 0xE1, 0x00, 0x00, 0x10
+    db 0x02, 0x04, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xA0, 0x0C, 0x80, 0xD2
+    db 0xC8, 0x0B, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+.msg_oob: db "RuntimeError: index out of range", 10, 0, 0, 0
+.bytes_arm_oob_end:
+
+emit_arm_print_list:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel .bytes_arm_pl]
+    mov rdx, .bytes_arm_pl_end - .bytes_arm_pl
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+.bytes_arm_pl:
+    db 0xFD, 0x7B, 0xBD, 0xA9
+    db 0xFD, 0x03, 0x00, 0x91
+    db 0xF3, 0x53, 0x01, 0xA9
+    db 0xF5, 0x5B, 0x02, 0xA9
+    db 0xF3, 0x03, 0x00, 0xAA
+    db 0x13, 0x0B, 0x00, 0xB4
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0xFF, 0x43, 0x00, 0xD1
+    db 0x61, 0x0B, 0x80, 0x52
+    db 0xE1, 0x03, 0x00, 0x39
+    db 0xE1, 0x03, 0x00, 0x91
+    db 0x22, 0x00, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xFF, 0x43, 0x00, 0x91
+    db 0x74, 0x02, 0x40, 0xF9
+    db 0x15, 0x00, 0x80, 0xD2
+    db 0xBF, 0x02, 0x14, 0xEB
+    db 0x4A, 0x08, 0x00, 0x54
+    db 0x76, 0x42, 0x00, 0x91
+    db 0xD6, 0x12, 0x15, 0x8B
+    db 0xC0, 0x02, 0x40, 0xF9
+    db 0xC1, 0x06, 0x40, 0xF9
+    db 0x3F, 0x0C, 0x00, 0xF1
+    db 0xA0, 0x01, 0x00, 0x54
+    db 0x3F, 0x10, 0x00, 0xF1
+    db 0x20, 0x05, 0x00, 0x54
+    db 0xFF, 0x03, 0x01, 0xD1
+    db 0xE1, 0x83, 0x00, 0x91
+    db 0x01, 0x00, 0x00, 0x94
+    db 0xE2, 0x03, 0x00, 0xAA
+    db 0xE1, 0x83, 0x00, 0x91
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xFF, 0x03, 0x01, 0x91
+    db 0x21, 0x00, 0x00, 0x14
+    db 0xFF, 0x43, 0x00, 0xD1
+    db 0xE0, 0x03, 0x00, 0xF9
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0x41, 0x04, 0x80, 0x52
+    db 0xE1, 0x23, 0x00, 0x39
+    db 0xE1, 0x23, 0x00, 0x91
+    db 0x22, 0x00, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xE0, 0x03, 0x40, 0xF9
+    db 0xFF, 0x43, 0x00, 0x91
+    db 0xE1, 0x03, 0x00, 0xAA
+    db 0x02, 0x00, 0x80, 0xD2
+    db 0x23, 0x68, 0x62, 0x38
+    db 0x63, 0x00, 0x00, 0x34
+    db 0x42, 0x04, 0x00, 0x91
+    db 0xFD, 0xFF, 0xFF, 0x17
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0xFF, 0x43, 0x00, 0xD1
+    db 0x41, 0x04, 0x80, 0x52
+    db 0xE1, 0x03, 0x00, 0x39
+    db 0xE1, 0x03, 0x00, 0x91
+    db 0x22, 0x00, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xFF, 0x43, 0x00, 0x91
+    db 0x03, 0x00, 0x00, 0x14
+    db 0xBD, 0xFF, 0xFF, 0x97
+    db 0x01, 0x00, 0x00, 0x14
+    db 0xB5, 0x06, 0x00, 0x91
+    db 0xBF, 0x02, 0x14, 0xEB
+    db 0xAA, 0x01, 0x00, 0x54
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0xFF, 0x43, 0x00, 0xD1
+    db 0x81, 0x05, 0x80, 0x52
+    db 0xE1, 0x03, 0x00, 0x39
+    db 0x01, 0x04, 0x80, 0x52
+    db 0xE1, 0x07, 0x00, 0x39
+    db 0xE1, 0x03, 0x00, 0x91
+    db 0x42, 0x00, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xFF, 0x43, 0x00, 0x91
+    db 0xBE, 0xFF, 0xFF, 0x17
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0xFF, 0x43, 0x00, 0xD1
+    db 0xA1, 0x0B, 0x80, 0x52
+    db 0xE1, 0x03, 0x00, 0x39
+    db 0xE1, 0x03, 0x00, 0x91
+    db 0x22, 0x00, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xFF, 0x43, 0x00, 0x91
+    db 0xF5, 0x5B, 0x42, 0xA9
+    db 0xF3, 0x53, 0x41, 0xA9
+    db 0xFD, 0x7B, 0xC3, 0xA8
+    db 0xC0, 0x03, 0x5F, 0xD6
+.bytes_arm_pl_end:
+
 
 _stub_x86_alloc:
     push rbp
@@ -985,17 +1296,17 @@ _stub_x86_format_int:
     push r13
 
     mov rax, rdi             ; int val
-    mov r12, rsi             ; buf_ptr
+    mov rbx, rsi             ; buf_ptr
     sub rsp, 32
     lea rsi, [rsp + 31]
     mov byte [rsi], 0
     mov rcx, 0
-    mov rbx, 10
+    mov r12, 10
 
     test rax, rax
     jnz .fmt_check_neg
-    mov byte [r12], '0'
-    mov byte [r12 + 1], 0
+    mov byte [rbx], '0'
+    mov byte [rbx + 1], 0
     mov rax, 1
     jmp .fmt_done
 
@@ -1010,7 +1321,7 @@ _stub_x86_format_int:
     test rax, rax
     jz .fmt_sign
     xor rdx, rdx
-    div rbx
+    div r12
     add dl, '0'
     dec rsi
     mov [rsi], dl
@@ -1026,20 +1337,20 @@ _stub_x86_format_int:
 
 .fmt_copy:
     mov rax, rcx             ; formatted len
-    mov rbx, r12             ; dst
+    mov rdi, rbx             ; dst = buf_ptr
 .copy_loop:
     test rcx, rcx
     jz .fmt_done
     mov dl, [rsi]
-    mov [rbx], dl
+    mov [rdi], dl
     inc rsi
-    inc rbx
+    inc rdi
     dec rcx
     jmp .copy_loop
 
 .fmt_done:
-    mov byte [r12 + rax], 0
-    mov rsi, r12
+    mov byte [rbx + rax], 0
+    mov rsi, rbx
     add rsp, 32
     pop r13
     pop r12

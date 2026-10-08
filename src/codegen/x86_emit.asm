@@ -21,6 +21,7 @@ default rel
 section .data
 err_unsupported_asm: db "SyntaxError: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
 s_print:             db "print", 0
+s_len:               db "len", 0
 s_input:             db "input", 0
 s_fstring:           db "fstring", 0
 s_free:              db "free", 0
@@ -36,7 +37,7 @@ s_pop:               db "pop", 0
 section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int
+extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
@@ -47,6 +48,7 @@ struc X86State
     .code_buf:     resq 1
     .print_int_off:resq 1
     .print_str_off:resq 1
+    .print_list_off:resq 1
     .div_zero_off: resq 1
     .overflow_off: resq 1
     .alloc_off:    resq 1
@@ -54,6 +56,7 @@ struc X86State
     .input_off:    resq 1
     .type_mismatch_off: resq 1
     .format_int_off: resq 1
+    .oob_off:      resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .loop_start:   resq 1
@@ -142,6 +145,11 @@ x86_emit_program:
     call emit_x86_print_str
 
     mov rax, [r13 + 16]
+    mov [xstate + X86State.print_list_off], rax
+    mov rdi, r13
+    call emit_x86_print_list
+
+    mov rax, [r13 + 16]
     mov [xstate + X86State.div_zero_off], rax
     mov rdi, r13
     call emit_x86_div_zero_trap
@@ -155,6 +163,11 @@ x86_emit_program:
     mov [xstate + X86State.type_mismatch_off], rax
     mov rdi, r13
     call emit_x86_type_mismatch_trap
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.oob_off], rax
+    mov rdi, r13
+    call emit_x86_oob_trap
 
     mov rax, [r13 + 16]
     mov [xstate + X86State.input_off], rax
@@ -184,6 +197,17 @@ x86_emit_program:
     mov rdi, r13             ; code_buf
     mov rsi, [xstate + X86State.input_off]
     add rsi, 0x35            ; patch offset
+    mov rdx, rax             ; rel32
+    call patch_dword
+
+    ; Dynamically patch inter-stub call in _stub_x86_print_list calling _stub_x86_format_int.
+    mov rax, [xstate + X86State.format_int_off]
+    mov rcx, [xstate + X86State.print_list_off]
+    add rcx, 0x7F            ; print_list_off + 0x7A + 5
+    sub rax, rcx             ; rel32
+    mov rdi, r13             ; code_buf
+    mov rsi, [xstate + X86State.print_list_off]
+    add rsi, 0x7B            ; patch offset
     mov rdx, rax             ; rel32
     call patch_dword
     jmp .emit_functions
@@ -1511,6 +1535,133 @@ x86_emit_expr:
     je .e_field_access
     cmp rax, AST_TERNARY
     je .e_ternary
+    cmp rax, AST_LIST_LIT
+    je .e_list_lit
+    jmp .done
+
+.e_list_lit:
+    mov rbx, [r12 + ASTNode.child1]
+    xor r14, r14
+.l_count_loop:
+    test rbx, rbx
+    jz .l_count_done
+    inc r14
+    mov rbx, [rbx + ASTNode.next]
+    jmp .l_count_loop
+
+.l_count_done:
+    mov rax, r14
+    shl rax, 4
+    add rax, 16
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov esi, eax
+    call emit_dword
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.alloc_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte
+    mov esi, r14d
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x40
+    call emit_byte
+    mov sil, 0x08
+    call emit_byte
+    mov esi, r14d
+    call emit_dword
+
+    mov rbx, [r12 + ASTNode.child1]
+    xor r15, r15
+.l_elem_emit_loop:
+    test rbx, rbx
+    jz .l_elem_emit_done
+
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte
+
+    push rbx
+    push r15
+    mov rdi, rbx
+    call x86_emit_expr
+    pop r15
+    pop rbx
+
+    mov rdi, r13
+    mov sil, 0x59
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x81
+    call emit_byte
+    mov rax, r15
+    shl rax, 4
+    add rax, 16
+    mov esi, eax
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x91
+    call emit_byte
+    mov rax, r15
+    shl rax, 4
+    add rax, 24
+    mov esi, eax
+    call emit_dword
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte
+
+    inc r15
+    mov rbx, [rbx + ASTNode.next]
+    jmp .l_elem_emit_loop
+
+.l_elem_emit_done:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 4
+    call emit_dword
     jmp .done
 
 .e_ternary:
@@ -2701,7 +2852,17 @@ x86_emit_expr:
     jmp .done
 
 .e_call:
-    ; Check print
+    ; Check len
+    cmp qword [r12 + ASTNode.val_len], 3
+    jne .chk_print
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_len
+    mov rdx, 3
+    call str_ncmp
+    test rax, rax
+    jz .call_len
+
+.chk_print:
     cmp qword [r12 + ASTNode.val_len], 5
     jne .chk_input
     mov rdi, [r12 + ASTNode.val]
@@ -2741,6 +2902,171 @@ x86_emit_expr:
     test rax, rax
     jz .call_fstring
     jmp .user_call
+
+.call_len:
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr
+
+    ; cmp rdx, 4 (LIST)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+
+    ; jz .len_is_list (0F 84 rel32)
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x84
+    call emit_byte
+    mov rbx, [r13 + 16]      ; offset of jz rel32 for list path
+    push rbx
+    xor rsi, rsi
+    call emit_dword
+
+    ; cmp rdx, 3 (STRING)
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte
+
+    ; jz .len_is_str (0F 84 rel32)
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x84
+    call emit_byte
+    mov r10, [r13 + 16]      ; offset of jz rel32 for str path
+    push r10
+    xor rsi, rsi
+    call emit_dword
+
+    ; Trigger type_mismatch_trap
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
+    ; Patch jz .len_is_list
+    mov rax, [r13 + 16]
+    pop r10                  ; str jz offset
+    pop rbx                  ; list jz offset
+    push r10                 ; re-push str jz offset
+    sub rax, rbx
+    sub rax, 4
+    mov rdi, r13
+    mov rsi, rbx
+    mov rdx, rax
+    call patch_dword
+
+.len_is_list:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte            ; mov rax, [rax]
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword          ; mov rdx, 1
+
+    ; jmp len_done (E9 rel32)
+    mov rdi, r13
+    mov sil, 0xE9
+    call emit_byte
+    mov r10, [r13 + 16]      ; offset of rel32 for list path
+    push r10
+    xor rsi, rsi
+    call emit_dword
+
+    ; Patch jz .len_is_str
+    mov rax, [r13 + 16]
+    pop r10                  ; list jmp rel32 offset
+    pop rbx                  ; str jz rel32 offset
+    push r10
+    sub rax, rbx
+    sub rax, 4
+    mov rdi, r13
+    mov rsi, rbx
+    mov rdx, rax
+    call patch_dword
+
+.len_is_str:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte            ; mov rsi, rax
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte            ; xor rax, rax
+
+.len_str_loop:
+    mov sil, 0x80
+    call emit_byte
+    mov sil, 0x3C
+    call emit_byte
+    mov sil, 0x06
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte            ; cmp byte [rsi + rax], 0
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte            ; je .len_str_done (+4)
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte            ; inc rax
+    mov sil, 0xEB
+    call emit_byte
+    mov sil, 0xF4
+    call emit_byte            ; jmp .len_str_loop (-12)
+
+.len_str_done:
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 1
+    call emit_dword          ; mov rdx, 1
+
+    ; Patch jmp len_done
+    mov rax, [r13 + 16]
+    pop r10                  ; list jmp rel32 offset
+    sub rax, r10
+    sub rax, 4
+    mov rdi, r13
+    mov rsi, r10
+    mov rdx, rax
+    call patch_dword
+    jmp .done
 
 .call_fstring:
     mov rdi, r13
@@ -2989,8 +3315,28 @@ x86_emit_expr:
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr        ; rax = val, rdx = tag at runtime
 
-    ; Runtime check: cmp rdx, 3 (48 83 FA 03)
+    ; cmp rdx, 4 (LIST)
     mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+
+    ; jz .print_as_list (0F 84 rel32)
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x84
+    call emit_byte
+    mov rbx, [r13 + 16]      ; offset of jz rel32 for list path
+    push rbx
+    xor rsi, rsi
+    call emit_dword
+
+    ; cmp rdx, 3 (STRING)
     mov sil, 0x48
     call emit_byte
     mov sil, 0x83
@@ -3000,11 +3346,15 @@ x86_emit_expr:
     mov sil, 0x03
     call emit_byte
 
-    ; je .print_as_str (74 0A)
-    mov sil, 0x74
+    ; jz .print_as_str (0F 84 rel32)
+    mov sil, 0x0F
     call emit_byte
-    mov sil, 0x0A
+    mov sil, 0x84
     call emit_byte
+    mov r10, [r13 + 16]      ; offset of jz rel32 for str path
+    push r10
+    xor rsi, rsi
+    call emit_dword
 
     ; --- Print as int ---
     mov sil, 0x48
@@ -3021,13 +3371,30 @@ x86_emit_expr:
     add rcx, 4
     sub rax, rcx
     mov esi, eax
+    call emit_dword          ; call print_int_off
+
+    ; jmp .print_done (E9 rel32)
+    mov rdi, r13
+    mov sil, 0xE9
+    call emit_byte
+    mov r14, [r13 + 16]      ; offset of jmp rel32 for int path
+    push r14
+    xor rsi, rsi
     call emit_dword
 
+    ; Patch jz .print_as_str
+    mov rax, [r13 + 16]
+    pop r14                  ; int_jmp
+    pop r10                  ; str_jz
+    pop rbx                  ; list_jz
+    push rbx                 ; re-push list_jz
+    push r14                 ; re-push int_jmp
+    sub rax, r10
+    sub rax, 4
     mov rdi, r13
-    mov sil, 0xEB
-    call emit_byte
-    mov sil, 0x0B
-    call emit_byte            ; jmp .done (2 bytes)
+    mov rsi, r10
+    mov rdx, rax
+    call patch_dword
 
 .print_as_str:
     mov rdi, r13
@@ -3053,6 +3420,126 @@ x86_emit_expr:
     sub rax, rcx
     mov esi, eax
     call emit_dword
+
+    ; jmp .print_done (E9 rel32)
+    mov rdi, r13
+    mov sil, 0xE9
+    call emit_byte
+    mov r15, [r13 + 16]      ; offset of jmp rel32 for str path
+    push r15
+    xor rsi, rsi
+    call emit_dword
+
+    ; Patch jz .print_as_list
+    mov rax, [r13 + 16]
+    pop r15                  ; str_jmp
+    pop r14                  ; int_jmp
+    pop rbx                  ; list_jz
+    push r14                 ; re-push int_jmp
+    push r15                 ; re-push str_jmp
+    sub rax, rbx
+    sub rax, 4
+    mov rdi, r13
+    mov rsi, rbx
+    mov rdx, rax
+    call patch_dword
+
+.print_as_list:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte            ; mov rdi, rax
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.print_list_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call print_list_off
+
+    ; Print '\n' after list
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xEC
+    call emit_byte
+    mov sil, 0x10
+    call emit_byte            ; sub rsp, 16
+
+    mov sil, 0xC6
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+    mov sil, 0x24
+    call emit_byte
+    mov sil, 0x0A
+    call emit_byte            ; mov byte [rsp], 10 ('\n')
+
+    mov sil, 0xBF
+    call emit_byte
+    mov esi, 1
+    call emit_dword          ; mov rdi, 1 (STDOUT)
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xE6
+    call emit_byte            ; mov rsi, rsp
+
+    mov sil, 0xBA
+    call emit_byte
+    mov esi, 1
+    call emit_dword          ; mov rdx, 1
+
+    mov sil, 0xB8
+    call emit_byte
+    mov esi, 1
+    call emit_dword          ; mov rax, 1
+
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; syscall
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xC4
+    call emit_byte
+    mov sil, 0x10
+    call emit_byte            ; add rsp, 16
+
+    ; Patch jmp int -> print_done
+    mov rax, [r13 + 16]
+    pop r15                  ; str jmp offset
+    pop r14                  ; int jmp offset
+
+    mov rcx, rax
+    sub rcx, r14
+    sub rcx, 4
+    mov rdi, r13
+    mov rsi, r14
+    mov rdx, rcx
+    call patch_dword
+
+    ; Patch jmp str -> print_done
+    mov rcx, [r13 + 16]
+    sub rcx, r15
+    sub rcx, 4
+    mov rdi, r13
+    mov rsi, r15
+    mov rdx, rcx
+    call patch_dword
+
     jmp .done
 
 .user_call:
@@ -3195,6 +3682,140 @@ x86_emit_expr:
     jmp .done
 
 .e_index:
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte
+
+    mov rdi, [r12 + ASTNode.child2]
+    call x86_emit_expr
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x59
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xF8
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte
+    mov sil, 0x7C
+    call emit_byte
+    mov sil, 0x0D
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x3B
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte
+    mov sil, 0x7C
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.oob_off]
+    mov r8, [r13 + 16]
+    add r8, 4
+    sub rax, r8
+    mov esi, eax
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC1
+    call emit_byte
+    mov sil, 0xE0
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte
+    mov sil, 0xC8
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte
+    mov sil, 0x10
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x50
+    call emit_byte
+    mov sil, 0x08
+    call emit_byte
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte
     jmp .done
 
 .done:
