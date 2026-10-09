@@ -175,7 +175,7 @@ While CAP uses Python-style whitespace indentation and syntax:
 3. **Struct Parameter Annotations:** Parameters accepting structs require explicit type annotations (e.g. `p: Point`), whereas scalar parameters are unannotated.
 4. **Freestanding Entry:** Freestanding targets (`--freestanding`) require an explicit `fn main():` or `naked fn main():`.
 5. **Comment Syntax:** Line comments begin with `/*/` rather than `#`.
-6. **Data Structures & Types:** CAP is a compiled systems language without built-in lists, dicts, garbage collection, or integers exceeding 64 bits.
+6. **Data Structures & Types:** CAP supports list literals and indexed reads, plus structs; dictionaries and garbage collection are not provided, and integers are limited to 64 bits.
 
 ---
 
