@@ -118,6 +118,15 @@ sum = add(x, y)
 print(f"Sum: {sum}")
 ```
 
+### Lists
+List literals and indexed reads are supported by the current implementation:
+```cap
+values = [10, 20, 30]
+print(values[1])
+```
+
+See [docs/LANGUAGE.md](docs/LANGUAGE.md) for supported list operations and limitations.
+
 ### Structs
 Struct parameter declarations require explicit type annotations:
 ```cap
