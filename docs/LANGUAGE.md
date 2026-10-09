@@ -4,7 +4,7 @@ This document describes the syntax and semantics of CAP v0.1.1.
 
 ## 1. Program Entry & Functions
 
-Small hosted scripts need no `main` wrapper; CAP is not a Python subset. CAP supports list literals and indexed reads, but does not provide dictionaries, automatic garbage collection, or integers wider than 64 bits.
+Small hosted scripts need no `main` wrapper; CAP is not a Python subset. CAP supports list literals and indexed reads, but does not provide dictionaries, automatic garbage collection, or integers wider than 64 bits. The parser recognizes `import Name`, but module resolution/loading is not implemented; imports are not a working feature yet.
 
 ### Hosted Mode Rules
 - A file with no `fn main` runs its top-level statements.
