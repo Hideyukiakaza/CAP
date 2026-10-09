@@ -4,7 +4,7 @@ This document describes the syntax and semantics of CAP v0.1.1.
 
 ## 1. Program Entry & Functions
 
-Small hosted scripts need no `main` wrapper; CAP is not a Python subset. There are no lists, dicts, files, or integers past 64 bits.
+Small hosted scripts need no `main` wrapper; CAP is not a Python subset. CAP supports list literals and indexed reads, but does not provide dictionaries, automatic garbage collection, or integers wider than 64 bits.
 
 ### Hosted Mode Rules
 - A file with no `fn main` runs its top-level statements.
@@ -46,7 +46,18 @@ print(f"Sum: {sum}")
 - **Decimal Literals:** Signed magnitudes `0` to `9223372036854775807`. Magnitude `9223372036854775808` is valid only as direct operand of unary minus (`-9223372036854775808` = `INT64_MIN`). Larger values produce `LexerError: integer literal '<spelling>' out of range (line N)`.
 - **Hexadecimal (`0x`/`0X`) & Binary (`0b`/`0B`):** 64-bit raw bit patterns wrapping in two's complement. Digit separators (`_`) are allowed between valid digits. Exceeding 64 bits produces `LexerError: hex literal ... exceeds 64 bits` / `LexerError: binary literal ... exceeds 64 bits`.
 
-## 4. Operators & Precedence
+## 4. Lists
+
+List literals use square brackets and may be empty. Elements are expressions separated by commas; trailing commas are not accepted. Indexing uses square brackets and is zero-based. An invalid index traps at runtime rather than silently reading outside the list. The current language surface does not promise general-purpose list mutation or Python-compatible list methods.
+
+```cap
+values = [10, 20, 30]
+print(values[1])
+empty = []
+print(len(values))
+```
+
+## 5. Operators & Precedence
 
 Precedence (tightest to loosest):
 1. Unary: `-`, `&` (address-of), `~` (bitwise NOT)
@@ -60,7 +71,7 @@ Precedence (tightest to loosest):
 9. Equality: `==`, `!=`
 10. Ternary Conditional: `cond ? true_expr : false_expr` (right-associative)
 
-## 5. Control Flow & Loops
+## 6. Control Flow & Loops
 
 - `for i in 10:` is shorthand for `for i in range(10):`. `i` takes values 0, 1, 2, 3, 4, 5, 6, 7, 8, 9. The stop value is exclusive. `for i in n:` and `for i in (n + 1):` use the same shorthand.
 - `for i in range(...)` remains fully supported, including `range(stop)`, `range(start, stop)`, and `range(start, stop, step)`.
@@ -103,7 +114,7 @@ print(f"Value: {x}") /*/ Comment in indented block
 print(msg)
 ```
 
-## 6. Structs & Memory Management
+## 7. Structs & Memory Management
 
 ```cap
 struct Point:
@@ -131,7 +142,7 @@ fn test():
 test()
 ```
 
-## 7. Builtin Functions, Input, and F-Strings
+## 8. Builtin Functions, Input, and F-Strings
 
 - `print(expr)`: Output integer, string, or f-string expression.
 - `input()`: Reads a line from stdin. A prompt string is permitted: `input("Enter your name: ")`.
@@ -140,7 +151,7 @@ test()
 - **F-string Expression Spans:** Expressions within `{ ... }` support sub-expressions including string literals, parentheses, and ternary operators: `f"status: {(a == 0) ? "zero" : "non-zero"}"`.
 - **C-Style Ternary Operator (`cond ? a : b`):** CAP supports right-associative conditional expressions `cond ? a : b`. Python-style `a if c else b` produces `SyntaxError: CAP uses 'cond ? a : b' for conditional expressions (line N)`.
 
-## 8. Inline Assembly (`asm:`)
+## 9. Inline Assembly (`asm:`)
 
 Supported x86-64 instructions in `asm:` blocks:
 - Registers: `rax`, `rbx`, `rcx`, `rdx`, `rsi`, `rdi`, `rbp`, `rsp`, `r8`..`r15`, `cr3`, segment registers (`ds`, `es`, `ss`).
@@ -152,7 +163,7 @@ asm:
 print("ASM block executed")
 ```
 
-## 9. Freestanding Mode Restrictions
+## 10. Freestanding Mode Restrictions
 
 In `--freestanding` mode:
 - Hosted system calls (`print`, `input`, `alloc`, `free`) produce compile-time errors.
