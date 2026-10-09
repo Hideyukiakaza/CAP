@@ -29,7 +29,7 @@ jobs:
         run: |
           make clean
           make
-          make --question
+          make --question capc
 
       - name: Run Frontend Tests
         run: ./tests/frontend/run_tests.sh
