@@ -47,6 +47,7 @@
 %define AST_FIELD_ASSIGN 31
 %define AST_TERNARY      32
 %define AST_LIST_LIT     33
+%define AST_DICT_LIT     34
 
 struc ASTNode
     .type:   resq 1

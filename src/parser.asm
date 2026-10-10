@@ -27,6 +27,7 @@ err_expected_indent: db "SyntaxError: Expected indented block", 10, 0
 err_expected_ident: db "SyntaxError: Expected identifier after '.'", 10, 0
 err_inc_stmt_only: db "SyntaxError: '++' is only valid as a statement (line ", 0
 err_index_assign_not_supported: db "SyntaxError: index assignment is not supported (line ", 0
+err_dict_key_must_be_string: db "SyntaxError: dictionary key must be a string (line ", 0
 s_plus_str: db "+", 0
 s_one_str:  db "1", 0
 s_type_is: db "Token type: ", 0
@@ -1524,6 +1525,8 @@ parse_primary_expr:
     je .p_paren
     cmp rcx, TOKEN_LBRACKET
     je .p_list_lit
+    cmp rcx, TOKEN_LBRACE
+    je .p_dict_lit
 
     push rbx
     mov rsi, err_syntax
@@ -1765,6 +1768,89 @@ parse_primary_expr:
     mov rcx, [rbx + Token.len]
     mov [rax + ASTNode.val], rdx
     mov [rax + ASTNode.val_len], rcx
+    mov [rax + ASTNode.child1], r12
+    pop r15
+    pop r14
+    mov rbx, rax
+    jmp .postfix_loop
+
+.p_dict_lit:
+    push r14
+    push r15
+    call lexer_next_token          ; consume '{'
+    xor r12, r12                   ; entry head = NULL
+    xor r13, r13                   ; entry tail = NULL
+
+.dict_entry_loop:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_RBRACE
+    je .done_dict_entries
+
+    cmp qword [rax + Token.type], TOKEN_STRING
+    je .key_is_str
+
+    mov rsi, err_dict_key_must_be_string
+    call print_err
+    mov rdi, [rax + Token.line]
+    call print_err_num
+    mov rsi, s_close_paren_nl
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.key_is_str:
+    call parse_expr
+    mov r14, rax                   ; r14 = key expr node
+
+    call lexer_next_token          ; consume ':'
+    call parse_expr
+    mov r15, rax                   ; r15 = val expr node
+
+    mov rdi, AST_FIELD_INIT
+    call create_ast_node
+    mov [rax + ASTNode.child1], r15 ; child1 = val expr node
+    mov [rax + ASTNode.child2], r14 ; child2 = key expr node
+
+    test r13, r13
+    jnz .app_dict_entry
+    mov r12, rax
+    mov r13, rax
+    jmp .chk_dict_comma
+
+.app_dict_entry:
+    mov [r13 + ASTNode.next], rax
+    mov r13, rax
+
+.chk_dict_comma:
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_COMMA
+    jne .check_dict_close
+
+    call lexer_next_token          ; consume ','
+    call lexer_peek_token
+    cmp qword [rax + Token.type], TOKEN_RBRACE
+    je .err_trailing_dict_comma    ; trailing comma before '}' is SyntaxError
+    jmp .dict_entry_loop
+
+.check_dict_close:
+    cmp qword [rax + Token.type], TOKEN_RBRACE
+    je .done_dict_entries
+
+    mov rsi, err_syntax
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.err_trailing_dict_comma:
+    mov rsi, err_syntax
+    call print_err
+    mov rdi, 1
+    call sys_exit
+
+.done_dict_entries:
+    call lexer_next_token          ; consume '}'
+    mov rdi, AST_DICT_LIT
+    call create_ast_node
     mov [rax + ASTNode.child1], r12
     pop r15
     pop r14
