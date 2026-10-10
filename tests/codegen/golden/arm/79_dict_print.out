@@ -1,4 +1,4 @@
 EXIT: 0
 STDOUT:
-4196439
+{"a": 1, "b": 2}
 STDERR:

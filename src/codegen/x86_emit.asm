@@ -37,7 +37,7 @@ s_pop:               db "pop", 0
 section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list
+extern emit_x86_print_int, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
@@ -49,6 +49,7 @@ struc X86State
     .print_int_off:resq 1
     .print_str_off:resq 1
     .print_list_off:resq 1
+    .print_dict_off:resq 1
     .div_zero_off: resq 1
     .overflow_off: resq 1
     .alloc_off:    resq 1
@@ -57,6 +58,7 @@ struc X86State
     .type_mismatch_off: resq 1
     .format_int_off: resq 1
     .oob_off:      resq 1
+    .dict_missing_off: resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .loop_start:   resq 1
@@ -150,6 +152,16 @@ x86_emit_program:
     call emit_x86_print_list
 
     mov rax, [r13 + 16]
+    mov [xstate + X86State.print_dict_off], rax
+    mov rdi, r13
+    call emit_x86_print_dict
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.dict_missing_off], rax
+    mov rdi, r13
+    call emit_x86_dict_missing_trap
+
+    mov rax, [r13 + 16]
     mov [xstate + X86State.div_zero_off], rax
     mov rdi, r13
     call emit_x86_div_zero_trap
@@ -208,6 +220,39 @@ x86_emit_program:
     mov rdi, r13             ; code_buf
     mov rsi, [xstate + X86State.print_list_off]
     add rsi, 0x7B            ; patch offset
+    mov rdx, rax             ; rel32
+    call patch_dword
+
+    ; Dynamically patch inter-stub call in _stub_x86_print_dict calling _stub_x86_format_int.
+    mov rax, [xstate + X86State.format_int_off]
+    mov rcx, [xstate + X86State.print_dict_off]
+    add rcx, 0x0F4           ; print_dict_off + 0x0EF + 5
+    sub rax, rcx             ; rel32
+    mov rdi, r13             ; code_buf
+    mov rsi, [xstate + X86State.print_dict_off]
+    add rsi, 0x0F0           ; patch offset
+    mov rdx, rax             ; rel32
+    call patch_dword
+
+    ; Dynamically patch inter-stub call in _stub_x86_print_dict calling _stub_x86_print_list.
+    mov rax, [xstate + X86State.print_list_off]
+    mov rcx, [xstate + X86State.print_dict_off]
+    add rcx, 0x173           ; print_dict_off + 0x16E + 5
+    sub rax, rcx             ; rel32
+    mov rdi, r13             ; code_buf
+    mov rsi, [xstate + X86State.print_dict_off]
+    add rsi, 0x16F           ; patch offset
+    mov rdx, rax             ; rel32
+    call patch_dword
+
+    ; Dynamically patch inter-stub call in _stub_x86_print_dict calling _stub_x86_print_dict.
+    mov rax, [xstate + X86State.print_dict_off]
+    mov rcx, [xstate + X86State.print_dict_off]
+    add rcx, 0x17D           ; print_dict_off + 0x178 + 5
+    sub rax, rcx             ; rel32
+    mov rdi, r13             ; code_buf
+    mov rsi, [xstate + X86State.print_dict_off]
+    add rsi, 0x179           ; patch offset
     mov rdx, rax             ; rel32
     call patch_dword
     jmp .emit_functions
@@ -1504,11 +1549,14 @@ x86_emit_stmt:
 x86_emit_expr:
     push rbp
     mov rbp, rsp
+    sub rsp, 128
     push rbx
     push r12
     push r13
     push r14
     push r15
+
+    mov qword [rbp - 80], 0
 
     mov r12, rdi             ; expr node
     mov r13, [xstate + X86State.code_buf]
@@ -1537,6 +1585,200 @@ x86_emit_expr:
     je .e_ternary
     cmp rax, AST_LIST_LIT
     je .e_list_lit
+    cmp rax, AST_DICT_LIT
+    je .e_dict_lit
+    jmp .done
+
+.e_dict_lit:
+    mov rbx, [r12 + ASTNode.child1]
+    xor r14, r14
+.d_count_loop:
+    test rbx, rbx
+    jz .d_count_done
+    inc r14
+    mov rbx, [rbx + ASTNode.next]
+    jmp .d_count_loop
+
+.d_count_done:
+    mov rax, r14
+    shl rax, 5
+    add rax, 16
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov esi, eax
+    call emit_dword          ; mov rdi, alloc_size
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.alloc_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call alloc_off -> rax = dict_ptr
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x00
+    call emit_byte
+    mov esi, r14d
+    call emit_dword          ; mov qword [rax], n
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x40
+    call emit_byte
+    mov sil, 0x08
+    call emit_byte
+    mov esi, r14d
+    call emit_dword          ; mov qword [rax + 8], n
+
+    mov rbx, [r12 + ASTNode.child1]
+    xor r15, r15
+.d_elem_emit_loop:
+    test rbx, rbx
+    jz .d_elem_emit_done
+
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte           ; push rax (dict_ptr)
+
+    push rbx
+    push r15
+    mov rdi, [rbx + ASTNode.child2] ; key_expr
+    call x86_emit_expr
+    pop r15
+    pop rbx
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte            ; cmp rdx, 3
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; je +5
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte           ; push rax (key_ptr)
+
+    push rbx
+    push r15
+    mov rdi, [rbx + ASTNode.child1] ; val_expr
+    call x86_emit_expr
+    pop r15
+    pop rbx
+
+    mov rdi, r13
+    mov sil, 0x59
+    call emit_byte           ; pop rcx (key_ptr)
+    mov sil, 0x5B
+    call emit_byte           ; pop rbx (dict_ptr)
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov rax, r15
+    shl rax, 5
+    add rax, 16
+    mov esi, eax
+    call emit_dword          ; mov [rbx + 16 + i*32], rcx
+
+    ; key_tag at [rbx + 24 + i*32]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov rax, r15
+    shl rax, 5
+    add rax, 24
+    mov esi, eax
+    call emit_dword
+    mov esi, 3
+    call emit_dword          ; mov qword [rbx + 24 + i*32], 3
+
+    ; val_val at [rbx + 32 + i*32]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov rax, r15
+    shl rax, 5
+    add rax, 32
+    mov esi, eax
+    call emit_dword          ; mov [rbx + 32 + i*32], rax
+
+    ; val_tag at [rbx + 40 + i*32]
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0x93
+    call emit_byte
+    mov rax, r15
+    shl rax, 5
+    add rax, 40
+    mov esi, eax
+    call emit_dword          ; mov [rbx + 40 + i*32], rdx
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xD8
+    call emit_byte            ; mov rax, rbx
+
+    inc r15
+    mov rbx, [rbx + ASTNode.next]
+    jmp .d_elem_emit_loop
+
+.d_elem_emit_done:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte
+    mov sil, 0xC2
+    call emit_byte
+    mov esi, 5
+    call emit_dword          ; mov rdx, 5 (DICT tag)
     jmp .done
 
 .e_list_lit:
@@ -2907,6 +3149,26 @@ x86_emit_expr:
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr
 
+    ; cmp rdx, 5 (DICT)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x84
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 72], rax       ; dict_len_jz_fixup
+    xor rsi, rsi
+    call emit_dword
+
     ; cmp rdx, 4 (LIST)
     mov rdi, r13
     mov sil, 0x48
@@ -2958,7 +3220,16 @@ x86_emit_expr:
     mov esi, eax
     call emit_dword
 
-    ; Patch jz .len_is_list
+    ; Patch dict_len_jz
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 72]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 72]
+    call patch_dword
+
+    ; Patch list_len_jz
     mov rax, [r13 + 16]
     pop r10                  ; str jz offset
     pop rbx                  ; list jz offset
@@ -3315,8 +3586,27 @@ x86_emit_expr:
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr        ; rax = val, rdx = tag at runtime
 
-    ; cmp rdx, 4 (LIST)
+    ; cmp rdx, 5 (DICT)
     mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x84
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 8], rax        ; dict_jz_fixup
+    xor rsi, rsi
+    call emit_dword
+
+    ; cmp rdx, 4 (LIST)
     mov sil, 0x48
     call emit_byte
     mov sil, 0x83
@@ -3326,17 +3616,17 @@ x86_emit_expr:
     mov sil, 0x04
     call emit_byte
 
-    ; jz .print_as_list (0F 84 rel32)
     mov sil, 0x0F
     call emit_byte
     mov sil, 0x84
     call emit_byte
-    mov rbx, [r13 + 16]      ; offset of jz rel32 for list path
-    push rbx
+    mov rax, [r13 + 16]
+    mov [rbp - 16], rax       ; list_jz_fixup
     xor rsi, rsi
     call emit_dword
 
     ; cmp rdx, 3 (STRING)
+    mov rdi, r13
     mov sil, 0x48
     call emit_byte
     mov sil, 0x83
@@ -3346,17 +3636,16 @@ x86_emit_expr:
     mov sil, 0x03
     call emit_byte
 
-    ; jz .print_as_str (0F 84 rel32)
     mov sil, 0x0F
     call emit_byte
     mov sil, 0x84
     call emit_byte
-    mov r10, [r13 + 16]      ; offset of jz rel32 for str path
-    push r10
+    mov rax, [r13 + 16]
+    mov [rbp - 24], rax       ; str_jz_fixup
     xor rsi, rsi
     call emit_dword
 
-    ; --- Print as int ---
+    ; --- Print INT ---
     mov sil, 0x48
     call emit_byte
     mov sil, 0x89
@@ -3373,30 +3662,23 @@ x86_emit_expr:
     mov esi, eax
     call emit_dword          ; call print_int_off
 
-    ; jmp .print_done (E9 rel32)
     mov rdi, r13
     mov sil, 0xE9
     call emit_byte
-    mov r14, [r13 + 16]      ; offset of jmp rel32 for int path
-    push r14
+    mov rax, [r13 + 16]
+    mov [rbp - 32], rax       ; int_jmp_fixup
     xor rsi, rsi
     call emit_dword
 
-    ; Patch jz .print_as_str
+.print_as_str:
     mov rax, [r13 + 16]
-    pop r14                  ; int_jmp
-    pop r10                  ; str_jz
-    pop rbx                  ; list_jz
-    push rbx                 ; re-push list_jz
-    push r14                 ; re-push int_jmp
-    sub rax, r10
-    sub rax, 4
-    mov rdi, r13
-    mov rsi, r10
     mov rdx, rax
+    sub rdx, [rbp - 24]       ; str_jz_fixup
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 24]
     call patch_dword
 
-.print_as_str:
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -3421,30 +3703,23 @@ x86_emit_expr:
     mov esi, eax
     call emit_dword
 
-    ; jmp .print_done (E9 rel32)
     mov rdi, r13
     mov sil, 0xE9
     call emit_byte
-    mov r15, [r13 + 16]      ; offset of jmp rel32 for str path
-    push r15
+    mov rax, [r13 + 16]
+    mov [rbp - 40], rax       ; str_jmp_fixup
     xor rsi, rsi
     call emit_dword
 
-    ; Patch jz .print_as_list
+.print_as_list:
     mov rax, [r13 + 16]
-    pop r15                  ; str_jmp
-    pop r14                  ; int_jmp
-    pop rbx                  ; list_jz
-    push r14                 ; re-push int_jmp
-    push r15                 ; re-push str_jmp
-    sub rax, rbx
-    sub rax, 4
-    mov rdi, r13
-    mov rsi, rbx
     mov rdx, rax
+    sub rdx, [rbp - 16]       ; list_jz_fixup
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 16]
     call patch_dword
 
-.print_as_list:
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -3462,7 +3737,7 @@ x86_emit_expr:
     mov esi, eax
     call emit_dword          ; call print_list_off
 
-    ; Print '\n' after list
+    ; Print '\n'
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -3471,8 +3746,7 @@ x86_emit_expr:
     mov sil, 0xEC
     call emit_byte
     mov sil, 0x10
-    call emit_byte            ; sub rsp, 16
-
+    call emit_byte
     mov sil, 0xC6
     call emit_byte
     mov sil, 0x04
@@ -3480,35 +3754,29 @@ x86_emit_expr:
     mov sil, 0x24
     call emit_byte
     mov sil, 0x0A
-    call emit_byte            ; mov byte [rsp], 10 ('\n')
-
+    call emit_byte
     mov sil, 0xBF
     call emit_byte
     mov esi, 1
-    call emit_dword          ; mov rdi, 1 (STDOUT)
-
+    call emit_dword
     mov sil, 0x48
     call emit_byte
     mov sil, 0x89
     call emit_byte
     mov sil, 0xE6
-    call emit_byte            ; mov rsi, rsp
-
+    call emit_byte
     mov sil, 0xBA
     call emit_byte
     mov esi, 1
-    call emit_dword          ; mov rdx, 1
-
+    call emit_dword
     mov sil, 0xB8
     call emit_byte
     mov esi, 1
-    call emit_dword          ; mov rax, 1
-
+    call emit_dword
     mov sil, 0x0F
     call emit_byte
     mov sil, 0x05
-    call emit_byte            ; syscall
-
+    call emit_byte
     mov sil, 0x48
     call emit_byte
     mov sil, 0x83
@@ -3516,28 +3784,134 @@ x86_emit_expr:
     mov sil, 0xC4
     call emit_byte
     mov sil, 0x10
-    call emit_byte            ; add rsp, 16
+    call emit_byte
 
-    ; Patch jmp int -> print_done
-    mov rax, [r13 + 16]
-    pop r15                  ; str jmp offset
-    pop r14                  ; int jmp offset
-
-    mov rcx, rax
-    sub rcx, r14
-    sub rcx, 4
     mov rdi, r13
-    mov rsi, r14
-    mov rdx, rcx
+    mov sil, 0xE9
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 48], rax       ; list_jmp_fixup
+    xor rsi, rsi
+    call emit_dword
+
+.print_as_dict:
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 8]        ; dict_jz_fixup
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 8]
     call patch_dword
 
-    ; Patch jmp str -> print_done
-    mov rcx, [r13 + 16]
-    sub rcx, r15
-    sub rcx, 4
     mov rdi, r13
-    mov rsi, r15
-    mov rdx, rcx
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte            ; mov rdi, rax
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.print_dict_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call print_dict_off
+
+    ; Print '\n'
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xEC
+    call emit_byte
+    mov sil, 0x10
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+    mov sil, 0x24
+    call emit_byte
+    mov sil, 0x0A
+    call emit_byte
+    mov sil, 0xBF
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xE6
+    call emit_byte
+    mov sil, 0xBA
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    mov sil, 0xB8
+    call emit_byte
+    mov esi, 1
+    call emit_dword
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xC4
+    call emit_byte
+    mov sil, 0x10
+    call emit_byte
+
+    mov rdi, r13
+    mov sil, 0xE9
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 56], rax       ; dict_jmp_fixup
+    xor rsi, rsi
+    call emit_dword
+
+.print_done_patch:
+    ; Patch dict_jmp
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 56]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 56]
+    call patch_dword
+
+    ; Patch list_jmp
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 48]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 48]
+    call patch_dword
+
+    ; Patch str_jmp
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 40]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 40]
+    call patch_dword
+
+    ; Patch int_jmp
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 32]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 32]
     call patch_dword
 
     jmp .done
@@ -3685,6 +4059,27 @@ x86_emit_expr:
     mov rdi, [r12 + ASTNode.child1]
     call x86_emit_expr
 
+    ; cmp rdx, 5 (DICT tag)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte
+
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x84
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 8], rax        ; dict_idx_jz_fixup
+    xor rsi, rsi
+    call emit_dword
+
+    ; cmp rdx, 4 (LIST tag)
     mov rdi, r13
     mov sil, 0x48
     call emit_byte
@@ -3694,10 +4089,15 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0x04
     call emit_byte
-    mov sil, 0x74
+
+    mov sil, 0x0F
     call emit_byte
-    mov sil, 0x05
+    mov sil, 0x84
     call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 16], rax       ; list_idx_jz_fixup
+    xor rsi, rsi
+    call emit_dword
 
     mov sil, 0xE8
     call emit_byte
@@ -3708,12 +4108,21 @@ x86_emit_expr:
     mov esi, eax
     call emit_dword
 
+.list_idx_path:
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 16]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 16]
+    call patch_dword
+
     mov rdi, r13
     mov sil, 0x50
-    call emit_byte
+    call emit_byte           ; push rax (list_ptr)
 
     mov rdi, [r12 + ASTNode.child2]
-    call x86_emit_expr
+    call x86_emit_expr       ; list idx expr
 
     mov rdi, r13
     mov sil, 0x48
@@ -3723,11 +4132,11 @@ x86_emit_expr:
     mov sil, 0xFA
     call emit_byte
     mov sil, 0x01
-    call emit_byte
+    call emit_byte            ; cmp rdx, 1
     mov sil, 0x74
     call emit_byte
     mov sil, 0x05
-    call emit_byte
+    call emit_byte            ; je +5
 
     mov sil, 0xE8
     call emit_byte
@@ -3740,7 +4149,7 @@ x86_emit_expr:
 
     mov rdi, r13
     mov sil, 0x59
-    call emit_byte
+    call emit_byte           ; pop rcx (list_ptr)
 
     mov sil, 0x48
     call emit_byte
@@ -3816,6 +4225,262 @@ x86_emit_expr:
     call emit_byte
     mov sil, 0x00
     call emit_byte
+
+    ; Emit runtime jmp to done
+    mov rdi, r13
+    mov sil, 0xE9
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 80], rax       ; list_idx_done_fixup
+    xor rsi, rsi
+    call emit_dword
+
+.dict_index_path:
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 8]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 8]
+    call patch_dword
+
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte           ; push rax (dict_ptr)
+
+    mov rdi, [r12 + ASTNode.child2]
+    call x86_emit_expr       ; lookup key expr
+
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte            ; cmp rdx, 3 (STRING tag)
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; je +5
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword
+
+    mov rdi, r13
+    mov sil, 0x5B
+    call emit_byte           ; pop rbx (dict_ptr)
+
+    mov sil, 0x4D
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xF6
+    call emit_byte            ; xor r14, r14 (i = 0)
+
+.dict_search_loop:
+    mov sil, 0x4C
+    call emit_byte
+    mov sil, 0x3B
+    call emit_byte
+    mov sil, 0x33
+    call emit_byte            ; cmp r14, [rbx]
+
+    mov sil, 0x0F
+    call emit_byte
+    mov sil, 0x8D
+    call emit_byte
+    mov rax, [r13 + 16]
+    mov [rbp - 64], rax       ; dict_search_fixup
+    xor rsi, rsi
+    call emit_dword          ; jge .dict_not_found
+
+    mov sil, 0x4C
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xF1
+    call emit_byte            ; mov rcx, r14
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC1
+    call emit_byte
+    mov sil, 0xE1
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; shl rcx, 5
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte
+    mov sil, 0xD9
+    call emit_byte            ; add rcx, rbx
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x49
+    call emit_byte
+    mov sil, 0x10
+    call emit_byte            ; mov rcx, [rcx + 16] (entry_key_ptr)
+
+    mov sil, 0x4D
+    call emit_byte
+    mov sil, 0x31
+    call emit_byte
+    mov sil, 0xC9
+    call emit_byte            ; xor r9, r9 (char index = 0)
+
+.dict_cmp_loop:
+    mov sil, 0x46
+    call emit_byte
+    mov sil, 0x8A
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte
+    mov sil, 0x08
+    call emit_byte            ; mov r8b, [rax + r9]
+
+    mov sil, 0x46
+    call emit_byte
+    mov sil, 0x8A
+    call emit_byte
+    mov sil, 0x14
+    call emit_byte
+    mov sil, 0x09
+    call emit_byte            ; mov r10b, [rcx + r9]
+
+    mov sil, 0x45
+    call emit_byte
+    mov sil, 0x38
+    call emit_byte
+    mov sil, 0xD0
+    call emit_byte            ; cmp r8b, r10b
+
+    mov sil, 0x75
+    call emit_byte
+    mov sil, 0x0A
+    call emit_byte            ; jne .dict_next_entry (+10)
+
+    mov sil, 0x45
+    call emit_byte
+    mov sil, 0x84
+    call emit_byte
+    mov sil, 0xC0
+    call emit_byte            ; test r8b, r8b
+
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x0A
+    call emit_byte            ; jz .dict_found (+10)
+
+    mov sil, 0x49
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte
+    mov sil, 0xC1
+    call emit_byte            ; inc r9
+
+    mov sil, 0xEB
+    call emit_byte
+    mov sil, 0xE9
+    call emit_byte            ; jmp .dict_cmp_loop (-23)
+
+.dict_next_entry:
+    mov sil, 0x49
+    call emit_byte
+    mov sil, 0xFF
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte            ; inc r14
+
+    mov sil, 0xEB
+    call emit_byte
+    mov sil, 0xCA
+    call emit_byte            ; jmp .dict_search_loop (-54)
+
+.dict_found:
+    mov rdi, r13
+    mov sil, 0x4C
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xF1
+    call emit_byte            ; mov rcx, r14
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0xC1
+    call emit_byte
+    mov sil, 0xE1
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte            ; shl rcx, 5
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x01
+    call emit_byte
+    mov sil, 0xD9
+    call emit_byte            ; add rcx, rbx
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x41
+    call emit_byte
+    mov sil, 0x20
+    call emit_byte            ; mov rax, [rcx + 32] (val_val)
+
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x8B
+    call emit_byte
+    mov sil, 0x51
+    call emit_byte
+    mov sil, 0x28
+    call emit_byte            ; mov rdx, [rcx + 40] (val_tag)
+
+    ; Emit runtime jmp .dict_done_pop (E9 05 00 00 00 to skip call dict_missing)
+    mov sil, 0xE9
+    call emit_byte
+    mov esi, 5
+    call emit_dword
+
+.dict_not_found:
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 64]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 64]
+    call patch_dword          ; patch jge .dict_not_found
+
+    mov rdi, r13
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.dict_missing_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call dict_missing_off
+
+.dict_done_pop:
+    mov rax, [r13 + 16]
+    mov rdx, rax
+    sub rdx, [rbp - 80]
+    sub rdx, 4
+    mov rdi, r13
+    mov rsi, [rbp - 80]
+    call patch_dword
+
     jmp .done
 
 .done:
@@ -3824,6 +4489,7 @@ x86_emit_expr:
     pop r13
     pop r12
     pop rbx
+    mov rsp, rbp
     pop rbp
     ret
 
