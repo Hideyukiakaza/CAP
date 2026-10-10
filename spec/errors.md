@@ -14,6 +14,7 @@ Compile-time errors occur during tokenization, parsing, or semantic analysis/cod
 | `LexerError` | `LexerError: hex literal '<spelling>' exceeds 64 bits (line <L>)` | Hexadecimal literal exceeds 64 bits (more than 16 hex digits). |
 | `LexerError` | `LexerError: binary literal '<spelling>' exceeds 64 bits (line <L>)` | Binary literal exceeds 64 bits (more than 64 binary digits). |
 | `SyntaxError` | `SyntaxError: <description> (line <L>)` | Indentation, grammar, or naked function rule violations. |
+| `SyntaxError` | `SyntaxError: import is not implemented yet` | `import Name` is recognized by the parser but module resolution/loading is not implemented. |
 | `SyntaxError` | `SyntaxError: freestanding targets require 'fn main()' or 'naked fn main()' (line 1)` | Compiling for freestanding mode without an explicit `fn main` or `naked fn main` declaration. |
 | `SyntaxError` | `SyntaxError: top-level statements cannot be mixed with 'fn main()' (line <L>)` | Mixing executable top-level statements with an explicit `fn main()` declaration. |
 | `SyntaxError` | `SyntaxError: 'break' outside loop (line <L>)` | Using a `break` statement outside an enclosing `loop`, `while`, or `for` loop. |

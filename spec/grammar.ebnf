@@ -70,12 +70,15 @@ postfix_op          = "." , IDENT
                     | "(" , [ arg_list ] , ")" ;
 
 primary_base        = LITERAL
+                    | list_lit
                     | FSTRING
                     | IDENT
                     | struct_lit
                     | alloc_expr
                     | range_expr
                     | "(" , expr , ")" ;
+
+list_lit            = "[" , [ expr , { "," , expr } ] , "]" ;
 
 struct_lit          = IDENT , "{" , [ field_init_list ] , "}" ;
 field_init_list     = field_init , { "," , field_init } ;
@@ -89,8 +92,9 @@ arg_list            = expr , { "," , expr } ;
 --- CAP v0.1.1 Semantics & Hardware Behavior Notes ---
 
 1. Integer Overflow:
-   - 64-bit signed integer arithmetic wraps around in standard two's-complement
-     assembly representation without hardware traps (e.g., INT64_MAX + 1 == INT64_MIN).
+   - Ordinary 64-bit add, subtract, and multiply use the target's two's-complement result (wraparound).
+   - Hosted division/remainder of INT64_MIN by -1 is guarded and triggers the integer-overflow runtime trap (exit code 101) rather than the x86 #DE exception.
+   - Hexadecimal and binary literals are raw 64-bit bit patterns interpreted in two's-complement form.
 
 2. Modulo & Remainder Sign:
    - Modulo operator `%` computes remainder matching the hardware signed division

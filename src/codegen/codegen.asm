@@ -59,6 +59,7 @@ err_naked_var:    db "SyntaxError: variable declaration not allowed in naked fun
 err_naked_alloc:  db "SyntaxError: alloc not allowed in naked function", 0
 err_naked_defer:  db "SyntaxError: defer not allowed in naked function", 0
 err_break_outside_loop: db "SyntaxError: 'break' outside loop", 0
+err_import_unsupported: db "SyntaxError: import is not implemented yet", 0
 
 s_builtin_print:    db "print", 0
 s_builtin_input:    db "input", 0
@@ -1031,8 +1032,20 @@ semantic_check_stmt:
     je .s_return
     cmp rax, AST_EXPR_STMT
     je .s_expr
+    cmp rax, AST_IMPORT
+    je .s_import
 
     jmp .stmt_done
+
+.s_import:
+    mov rsi, err_import_unsupported
+    call print_err
+    mov rdi, r13
+    call print_node_line_suffix
+    mov rsi, err_newline_cg
+    call print_err
+    mov rdi, 1
+    call sys_exit
 
 .s_block:
     mov rdi, r12

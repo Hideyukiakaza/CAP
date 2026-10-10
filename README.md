@@ -118,6 +118,15 @@ sum = add(x, y)
 print(f"Sum: {sum}")
 ```
 
+### Lists
+List literals and indexed reads are supported by the current implementation:
+```cap
+values = [10, 20, 30]
+print(values[1])
+```
+
+See [docs/LANGUAGE.md](docs/LANGUAGE.md) for supported list operations and limitations.
+
 ### Structs
 Struct parameter declarations require explicit type annotations:
 ```cap
@@ -175,7 +184,7 @@ While CAP uses Python-style whitespace indentation and syntax:
 3. **Struct Parameter Annotations:** Parameters accepting structs require explicit type annotations (e.g. `p: Point`), whereas scalar parameters are unannotated.
 4. **Freestanding Entry:** Freestanding targets (`--freestanding`) require an explicit `fn main():` or `naked fn main():`.
 5. **Comment Syntax:** Line comments begin with `/*/` rather than `#`.
-6. **Data Structures & Types:** CAP is a compiled systems language without built-in lists, dicts, garbage collection, or integers exceeding 64 bits.
+6. **Data Structures & Types:** CAP supports list literals and indexed reads, plus structs; dictionaries and garbage collection are not provided, and integers are limited to 64 bits.
 
 ---
 
@@ -239,6 +248,7 @@ Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 1. **Flow-Insensitive Variable Check:** Variable definition analysis is flow-insensitive; assigning a variable inside a conditional branch marks it as defined across the whole function body.
 2. **QEMU RIP Report on Non-Canonical `ret`:** QEMU's x86_64 CPU model records the target non-canonical address on the `#GP` stack frame upon `ret` to non-canonical space; real hardware behavior is unverified and not guaranteed.
 3. **Freestanding Mode Restricted Builtins:** `print`, `input`, `alloc`, and `free` produce compile-time errors in freestanding mode.
+4. **Module Imports:** `import Name` is rejected explicitly until module resolution and loading are implemented.
 
 ### Roadmap (Unpromised Project Directions)
 - Native macOS and Windows executable backends.

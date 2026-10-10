@@ -30,8 +30,14 @@ for src in "$EX_DIR"/*.cap; do
             fail=$((fail+1))
             continue
         fi
-        out="$("$bin")"
+        out="$(timeout 5 "$bin")"
+        run_status=$?
         rm -f "$bin"
+        if [ "$run_status" -ne 0 ]; then
+            echo "FAIL run $base (exit $run_status; timeout limit 5s)"
+            fail=$((fail+1))
+            continue
+        fi
     fi
 
     if [ ! -f "$golden" ]; then
