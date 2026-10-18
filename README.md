@@ -130,6 +130,22 @@ print(f"Point x={p.x}, y={p.y}")
 ```
 
 ### Loops and Control Flow
+### Ternary Conditional Expressions
+CAP uses C-style `cond ? true_expr : false_expr` ternary operators:
+
+```cap
+fn classify(n):
+    return n == 0 ? "zero" : (n % 2 == 0 ? "even" : "odd")
+
+fn main():
+    print(classify(0))
+    print(classify(4))
+    print(classify(7))
+```
+
+### F-Strings
+F-strings `f"..."` support general sub-expression evaluation inside `{...}`. Escaped braces `{{` and `}}` output literal `{` and `}`.
+
 ```cap
 x = 10
 if x > 5:
@@ -175,7 +191,8 @@ While CAP uses Python-style whitespace indentation and syntax:
 3. **Struct Parameter Annotations:** Parameters accepting structs require explicit type annotations (e.g. `p: Point`), whereas scalar parameters are unannotated.
 4. **Freestanding Entry:** Freestanding targets (`--freestanding`) require an explicit `fn main():` or `naked fn main():`.
 5. **Comment Syntax:** Line comments begin with `/*/` rather than `#`.
-6. **Data Structures & Types:** CAP is a compiled systems language without built-in lists, dicts, garbage collection, or integers exceeding 64 bits.
+6. **Arithmetic Semantics:** `/` truncates toward zero, `%` takes the dividend's sign, and mixing an int with a float produces a `RuntimeError: type mismatch in arithmetic operation` trap.
+7. **Data Structures & Types:** CAP is a compiled systems language without garbage collection or integers exceeding 64 bits.
 
 ---
 
@@ -267,3 +284,9 @@ Detailed instructions in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 ### License
 Licensed under the [Apache License, Version 2.0](LICENSE).
 Copyright 2026 Devadath A A (aka Hideyukiakaza).
+
+## Unreleased
+
+- `free(0)` is a null-pointer no-op.
+- `%` (modulo) on ARM64 and x86-64 preserves dividend sign and returns tag 1 (INT).
+- File operations via builtin `write(path, body)`.

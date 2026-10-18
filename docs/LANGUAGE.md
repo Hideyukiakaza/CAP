@@ -60,7 +60,28 @@ Precedence (tightest to loosest):
 9. Equality: `==`, `!=`
 10. Ternary Conditional: `cond ? true_expr : false_expr` (right-associative)
 
+### Arithmetic Differences from Python
+- `/` performs integer division truncating toward zero.
+- `%` (modulo) preserves the dividend's sign.
+- Mixing an int and a float operand triggers `RuntimeError: type mismatch in arithmetic operation` (exit status 101).
+
 ## 5. Control Flow & Loops
+### Ternary Conditional Expressions
+CAP uses C-style `cond ? true_expr : false_expr` ternary operators:
+
+```cap
+fn classify(n):
+    return n == 0 ? "zero" : (n % 2 == 0 ? "even" : "odd")
+
+fn main():
+    print(classify(0))
+    print(classify(4))
+    print(classify(7))
+```
+
+### F-Strings
+F-strings `f"..."` evaluate embedded sub-expressions inside `{...}`. Double braces `{{` and `}}` unescape to literal `{` and `}`.
+
 
 - `for i in 10:` is shorthand for `for i in range(10):`. `i` takes values 0, 1, 2, 3, 4, 5, 6, 7, 8, 9. The stop value is exclusive. `for i in n:` and `for i in (n + 1):` use the same shorthand.
 - `for i in range(...)` remains fully supported, including `range(stop)`, `range(start, stop)`, and `range(start, stop, step)`.
@@ -166,3 +187,10 @@ fn main():
         out dx, al
     return 0
 ```
+
+
+## Unreleased Notes
+
+- `free(0)` is a null-pointer no-op.
+- `%` (modulo) on ARM64 and x86-64 preserves dividend sign and returns tag 1 (INT).
+- Builtin `write(path, body)` creates or overwrites file contents.

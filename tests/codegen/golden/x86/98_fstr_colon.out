@@ -1,0 +1,1 @@
+COMPILE_ERROR: SyntaxError: unexpected ':' in f-string expression (line 1)
