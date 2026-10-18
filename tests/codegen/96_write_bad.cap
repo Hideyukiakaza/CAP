@@ -1,0 +1,2 @@
+fn main():
+    write(1, "hi")
