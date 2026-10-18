@@ -37,6 +37,16 @@ run_one() {
             stdout_x86="$(timeout 3 "$bin_x86" 2>/tmp/cap_test_stderr_x86)"
         fi
         exit_x86=$?
+        if [ "$base" = "94_write_basic" ]; then
+            if [ ! -f out.txt ] || [ "$(cat out.txt 2>/dev/null)" != "hi" ]; then
+                stderr_x86="FILE_CONTENT_MISMATCH: $(cat out.txt 2>/dev/null)"
+            fi
+        elif [ "$base" = "95_write_replace" ]; then
+            if [ ! -f out.txt ] || [ "$(cat out.txt 2>/dev/null)" != "two" ]; then
+                stderr_x86="FILE_CONTENT_MISMATCH: $(cat out.txt 2>/dev/null)"
+            fi
+        fi
+        rm -f out.txt
         stderr_x86="$(cat /tmp/cap_test_stderr_x86)"
         actual_x86="$(cat <<EOF
 EXIT: $exit_x86
@@ -87,6 +97,16 @@ EOF
             stdout_arm="$(timeout 3 qemu-aarch64 "$bin_arm" 2>/tmp/cap_test_stderr_arm)"
         fi
         exit_arm=$?
+        if [ "$base" = "94_write_basic" ]; then
+            if [ ! -f out.txt ] || [ "$(cat out.txt 2>/dev/null)" != "hi" ]; then
+                stderr_arm="FILE_CONTENT_MISMATCH: $(cat out.txt 2>/dev/null)"
+            fi
+        elif [ "$base" = "95_write_replace" ]; then
+            if [ ! -f out.txt ] || [ "$(cat out.txt 2>/dev/null)" != "two" ]; then
+                stderr_arm="FILE_CONTENT_MISMATCH: $(cat out.txt 2>/dev/null)"
+            fi
+        fi
+        rm -f out.txt
         stderr_arm="$(cat /tmp/cap_test_stderr_arm)"
         actual_arm="$(cat <<EOF
 EXIT: $exit_arm

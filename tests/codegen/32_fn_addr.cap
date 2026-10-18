@@ -2,5 +2,5 @@ fn f():
     return 0
 
 fn main():
-    print(&f)
+    print(&f > 0)
     return 0
