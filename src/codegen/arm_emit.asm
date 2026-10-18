@@ -1087,7 +1087,7 @@ arm_emit_stmt:
     neg rax
     and eax, 0x1FF
     shl eax, 12
-    mov r8d, 0xF84007E1
+    mov r8d, 0xF84003A1
     or eax, r8d
     EMIT_ARM eax
 
