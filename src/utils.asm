@@ -31,9 +31,14 @@ s_err_line_1: db " (line ", 0
 s_err_line_2: db ")", 10, 0
 s_err_nl:     db 10, 0
 
+align 8
+double_ten:  dq 10.0
+double_zero: dq 0.0
+double_one:  dq 1.0
+
 section .text
 global sys_exit, sys_write, sys_read, sys_open, sys_close, sys_mmap
-global malloc_init, malloc_bytes, str_len, str_cmp, str_ncmp, print_str, print_err, print_err_bytes, print_err_num, print_char, print_num, parse_dec_int, parse_int_literal
+global malloc_init, malloc_bytes, str_len, str_cmp, str_ncmp, print_str, print_err, print_err_bytes, print_err_num, print_char, print_num, parse_dec_int, parse_int_literal, parse_float_literal
 
 %define SYS_READ 0
 %define SYS_WRITE 1
@@ -446,6 +451,164 @@ parse_int_literal:
 
 .success:
     add rsp, 24              ; clean up push r8, rdi, rcx
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+parse_float_literal:
+    ; rdi = str_ptr, rcx = len
+    ; Returns IEEE-754 binary64 bits in rax.
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi             ; str_ptr
+    mov r13, rcx             ; len
+
+    xor r14, r14             ; int_val = 0
+    xor r15, r15             ; frac_val = 0
+    sub rsp, 32
+    mov qword [rbp - 48], 0  ; frac_count = 0
+    mov qword [rbp - 56], 0  ; exp_val = 0
+    mov qword [rbp - 64], 0  ; exp_neg = 0
+
+.parse_int_part:
+    test r13, r13
+    jz .compute_float
+    mov cl, [r12]
+    cmp cl, '.'
+    je .seen_dot
+    cmp cl, 'e'
+    je .seen_exp
+    cmp cl, 'E'
+    je .seen_exp
+    cmp cl, '_'
+    je .next_int_char
+
+    sub cl, '0'
+    movzx rcx, cl
+    imul r14, r14, 10
+    add r14, rcx
+
+.next_int_char:
+    inc r12
+    dec r13
+    jmp .parse_int_part
+
+.seen_dot:
+    inc r12
+    dec r13
+
+.parse_frac_part:
+    test r13, r13
+    jz .compute_float
+    mov cl, [r12]
+    cmp cl, 'e'
+    je .seen_exp
+    cmp cl, 'E'
+    je .seen_exp
+    cmp cl, '_'
+    je .next_frac_char
+
+    sub cl, '0'
+    movzx rcx, cl
+    imul r15, r15, 10
+    add r15, rcx
+    inc qword [rbp - 48]
+
+.next_frac_char:
+    inc r12
+    dec r13
+    jmp .parse_frac_part
+
+.seen_exp:
+    inc r12
+    dec r13
+    test r13, r13
+    jz .compute_float
+
+    mov cl, [r12]
+    cmp cl, '-'
+    jne .chk_exp_pos
+    mov qword [rbp - 64], 1
+    inc r12
+    dec r13
+    jmp .parse_exp_digits
+
+.chk_exp_pos:
+    cmp cl, '+'
+    jne .parse_exp_digits
+    inc r12
+    dec r13
+
+.parse_exp_digits:
+    test r13, r13
+    jz .compute_float
+    mov cl, [r12]
+    cmp cl, '_'
+    je .next_exp_char
+
+    sub cl, '0'
+    movzx rcx, cl
+    mov rax, [rbp - 56]
+    imul rax, rax, 10
+    add rax, rcx
+    mov [rbp - 56], rax
+
+.next_exp_char:
+    inc r12
+    dec r13
+    jmp .parse_exp_digits
+
+.compute_float:
+    cvtsi2sd xmm0, r14
+    cvtsi2sd xmm1, r15
+
+    mov rcx, [rbp - 48]
+    movsd xmm2, [rel double_ten]
+.scale_frac_loop:
+    test rcx, rcx
+    jz .add_frac
+    divsd xmm1, xmm2
+    dec rcx
+    jmp .scale_frac_loop
+
+.add_frac:
+    addsd xmm0, xmm1
+
+    mov rcx, [rbp - 56]
+    test rcx, rcx
+    jz .float_done
+
+    cmp qword [rbp - 64], 1
+    je .exp_div_loop
+
+.exp_mul_loop:
+    test rcx, rcx
+    jz .float_done
+    mulsd xmm0, xmm2
+    dec rcx
+    jmp .exp_mul_loop
+
+.exp_div_loop:
+    test rcx, rcx
+    jz .float_done
+    divsd xmm0, xmm2
+    dec rcx
+    jmp .exp_div_loop
+
+.float_done:
+    movq rax, xmm0
+
+    lea rsp, [rbp - 40]
     pop r15
     pop r14
     pop r13
