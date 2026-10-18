@@ -33,15 +33,16 @@ s_mov_arm:               db "mov", 0
 section .text
 global arm_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_arm_print_int, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
+extern emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
 extern sym_init, add_symbol, add_symbol_type, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol, find_symbol_entry
-extern print_err, sys_exit, str_ncmp, parse_dec_int, parse_int_literal
+extern print_err, sys_exit, str_ncmp, parse_dec_int, parse_int_literal, parse_float_literal
 
 struc ArmState
     .code_buf:          resq 1
     .print_int_off:     resq 1
+    .print_float_off:   resq 1
     .print_str_off:     resq 1
     .print_list_off:    resq 1
     .print_dict_off:    resq 1
@@ -95,8 +96,8 @@ arm_emit_program:
     ; bl main (0x94000000 - placeholder rel26 = 0)
     EMIT_ARM 0x94000000
 
-    ; mov x8, #94 (sys_exit_group = 94) -> 0xD2800BC8
-    EMIT_ARM 0xD2800BC8
+    ; mov x8, #93 (sys_exit = 93) -> 0xD2800BA8
+    EMIT_ARM 0xD2800BA8
 
     ; svc #0 -> 0xD4000001
     EMIT_ARM 0xD4000001
@@ -106,6 +107,11 @@ arm_emit_program:
     mov [armstate + ArmState.print_int_off], rax
     mov rdi, r13
     call emit_arm_print_int
+
+    mov rax, [r13 + 16]
+    mov [armstate + ArmState.print_float_off], rax
+    mov rdi, r13
+    call emit_arm_print_float
 
     mov rax, [r13 + 16]
     mov [armstate + ArmState.print_str_off], rax
@@ -496,6 +502,7 @@ arm_emit_fn:
 arm_emit_stmt:
     push rbp
     mov rbp, rsp
+    sub rsp, 128
     push rbx
     push r12
     push r13
@@ -504,6 +511,8 @@ arm_emit_stmt:
 
     mov qword [rbp - 80], 0
     mov qword [rbp - 88], 0
+    mov qword [rbp - 104], 0
+    mov qword [rbp - 112], 0
 
     mov r12, rdi
     mov r13, [armstate + ArmState.code_buf]
@@ -769,6 +778,8 @@ arm_emit_stmt:
 
     ; str x0, [sp, #-16]! -> push x0
     EMIT_ARM 0xF81F0FE0
+    ; str x1, [sp, #-16]! -> push x1
+    EMIT_ARM 0xF81F0FE1
 
     mov rbx, [arm_defer_count]
 .ret_unwind_loop:
@@ -782,6 +793,8 @@ arm_emit_stmt:
     jmp .ret_unwind_loop
 
 .ret_unwind_done:
+    ; ldr x1, [sp], #16 -> pop x1
+    EMIT_ARM 0xF84107E1
     ; ldr x0, [sp], #16 -> pop x0
     EMIT_ARM 0xF84107E0
 
@@ -1175,11 +1188,24 @@ arm_emit_stmt:
     jmp .stmt_loop
 
 .done:
+    mov rsi, [rbp - 112]
+    test rsi, rsi
+    jz .done_no_float_fixup
+    mov rax, [r13 + 16]
+    sub rax, rsi
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    or eax, 0x14000000
+    mov rdi, r13
+    mov rdx, rax
+    call patch_dword
+.done_no_float_fixup:
     pop r15
     pop r14
     pop r13
     pop r12
     pop rbx
+    mov rsp, rbp
     pop rbp
     ret
 
@@ -1850,16 +1876,58 @@ arm_emit_expr:
     jmp .chk_float_dot_arm
 
 .e_lit_float_arm:
-    ; mov x0, #0 -> 0xD2800000
-    EMIT_ARM 0xD2800000
+    push r12
+    push r13
+    mov rdi, [r12 + ASTNode.val]
+    mov rcx, [r12 + ASTNode.val_len]
+    call parse_float_literal
+    pop r13
+    pop r12
+    mov rbx, rax
+
+    ; movz x0, chunk0
+    mov eax, ebx
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xD2800000
+    EMIT_ARM eax
+
+    ; movk x0, chunk1, lsl #16
+    mov rax, rbx
+    shr rax, 16
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xF2A00000
+    EMIT_ARM eax
+
+    ; movk x0, chunk2, lsl #32
+    mov rax, rbx
+    shr rax, 32
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xF2C00000
+    EMIT_ARM eax
+
+    ; movk x0, chunk3, lsl #48
+    mov rax, rbx
+    shr rax, 48
+    and eax, 0xFFFF
+    shl eax, 5
+    or eax, 0xF2E00000
+    EMIT_ARM eax
+
     ; mov x1, #2 (FLOAT tag = 2) -> 0xD2800041
     EMIT_ARM 0xD2800041
     jmp .done
 
 .is_int_lit_arm:
+    push r12
+    push r13
     xor rsi, rsi
     mov r8, [r12 + ASTNode.line]
     call parse_int_literal
+    pop r13
+    pop r12
     mov rbx, rax
 
     mov eax, ebx
@@ -1986,6 +2054,9 @@ arm_emit_expr:
     jmp .done
 
 .e_bin_op:
+    mov qword [rbp - 104], 0
+    mov qword [rbp - 112], 0
+    push r12                  ; save AST_BIN_OP node in compiler stack
     ; Left child
     mov rdi, [r12 + ASTNode.child1]
     call arm_emit_expr        ; x0 = val, x1 = tag
@@ -1994,36 +2065,110 @@ arm_emit_expr:
     ; str x1, [sp, #-16]! -> 0xF81F0FE1
     EMIT_ARM 0xF81F0FE1
 
+    mov r12, [rsp]            ; restore AST_BIN_OP node
     ; Right child
     mov rdi, [r12 + ASTNode.child2]
     call arm_emit_expr        ; x0 = right val, x1 = right tag
+
+    pop r12                   ; pop AST_BIN_OP node
 
     ; ldr x3, [sp], #16 -> 0xF84107E3 (left tag)
     EMIT_ARM 0xF84107E3
     ; ldr x2, [sp], #16 -> 0xF84107E2 (left val)
     EMIT_ARM 0xF84107E2
 
-    ; Check if left tag (x3) != 1 or right tag (x1) != 1
-    ; cmp x3, #1 -> 0xF100047F
-    EMIT_ARM 0xF100047F
-    ; b.ne +16 -> 0x54000081 (to trap bl)
-    EMIT_ARM 0x54000081
+    ; Check if left tag (x3) == 1 and right tag (x1) == 1
+    EMIT_ARM 0xF100047F       ; cmp x3, #1
+    EMIT_ARM 0x54000041       ; b.ne .chk_float_arm (+2 words = +8 bytes)
 
-    ; cmp x1, #1 -> 0xF100043F
-    EMIT_ARM 0xF100043F
-    ; b.ne +8 -> 0x54000041 (trap)
-    EMIT_ARM 0x54000041
-    ; b +8 -> 0x14000002 (skip trap)
-    EMIT_ARM 0x14000002
+    EMIT_ARM 0xF100043F       ; cmp x1, #1
+    mov rax, [r13 + 16]
+    mov [rbp - 104], rax      ; int_op_b_eq_fixup
+    EMIT_ARM 0x54000000       ; b.eq .skip_type_check_arm
 
-    ; Trigger type_mismatch_trap
+.chk_float_arm:
+    EMIT_ARM 0xF100087F       ; cmp x3, #2
+    EMIT_ARM 0x54000061       ; b.ne .type_mismatch_trap_arm (+3 words = +12 bytes)
+
+    EMIT_ARM 0xF100083F       ; cmp x1, #2
+    EMIT_ARM 0x54000040       ; b.eq .do_float_op_arm (+2 words = +8 bytes)
+
+.type_mismatch_trap_arm:
     mov rax, [armstate + ArmState.type_mismatch_off]
     sub rax, [r13 + 16]
     sar rax, 2
     and eax, 0x03FFFFFF
     mov r8d, 0x94000000
     or eax, r8d
-    EMIT_ARM eax
+    EMIT_ARM eax             ; bl type_mismatch_off
+
+.do_float_op_arm:
+    EMIT_ARM 0x9E670040       ; fmov d0, x2
+    EMIT_ARM 0x9E670001       ; fmov d1, x0
+
+    mov r11, [r12 + ASTNode.val]
+    mov cl, [r11]
+
+    cmp cl, '/'
+    jne .chk_f_add_arm
+
+    ; Check division by zero (d1 == 0.0)
+    EMIT_ARM 0x1E602028       ; fcmp d1, #0.0
+    EMIT_ARM 0x54000041       ; b.ne +2 words (+8 bytes)
+
+    mov rax, [armstate + ArmState.div_zero_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax             ; bl div_zero_off
+
+    EMIT_ARM 0x1E611800       ; fdiv d0, d0, d1
+    jmp .f_arith_done_arm
+
+.chk_f_add_arm:
+    cmp cl, '+'
+    jne .chk_f_sub_arm
+
+    EMIT_ARM 0x1E612800       ; fadd d0, d0, d1
+    jmp .f_arith_done_arm
+
+.chk_f_sub_arm:
+    cmp cl, '-'
+    jne .chk_f_mul_arm
+
+    EMIT_ARM 0x1E613800       ; fsub d0, d0, d1
+    jmp .f_arith_done_arm
+
+.chk_f_mul_arm:
+    cmp cl, '*'
+    jne .f_arith_done_arm
+    EMIT_ARM 0x1E610800       ; fmul d0, d0, d1
+
+.f_arith_done_arm:
+    EMIT_ARM 0x9E660000       ; fmov x0, d0
+    EMIT_ARM 0xD2800041       ; mov x1, #2 (tag = 2 FLOAT)
+
+    mov rax, [r13 + 16]
+    mov [rbp - 112], rax      ; float_op_done_fixup
+    EMIT_ARM 0x14000000       ; b .done_patch_bin_op_arm
+
+.skip_type_check_arm:
+    cmp qword [rbp - 104], 0
+    je .no_patch_int_arm
+    mov rax, [r13 + 16]
+    sub rax, [rbp - 104]
+    sar rax, 2
+    and eax, 0x0007FFFF
+    shl eax, 5
+    or eax, 0x54000000
+    mov rdi, r13
+    mov rsi, [rbp - 104]
+    mov edx, eax
+    call patch_dword          ; patch b.eq .skip_type_check_arm
+.no_patch_int_arm:
+    ; Integer ops follow directly...
 
     ; Op
     mov r11, [r12 + ASTNode.val]
@@ -2053,7 +2198,7 @@ arm_emit_expr:
     je .op_mod
     cmp r8b, '='
     je .op_eq
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .chk_shl_arm:
     cmp r9b, '<'
@@ -2070,56 +2215,56 @@ arm_emit_expr:
     EMIT_ARM 0x8A000040
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_bor_arm:
     ; orr x0, x2, x0 -> 0xAA000040
     EMIT_ARM 0xAA000040
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_bxor_arm:
     ; eor x0, x2, x0 -> 0xCA000040
     EMIT_ARM 0xCA000040
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_shl_arm:
     ; lsl x0, x2, x0 -> 0x9AC02040
     EMIT_ARM 0x9AC02040
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_shr_arm:
     ; asrv x0, x2, x0 -> 0x9AC02840
     EMIT_ARM 0x9AC02840
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_add:
     ; add x0, x2, x0 -> 0x8B000040
     EMIT_ARM 0x8B000040
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_sub:
     ; sub x0, x2, x0 -> 0xCB000040
     EMIT_ARM 0xCB000040
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_mul:
     ; mul x0, x2, x0 -> 0x9B007C40
     EMIT_ARM 0x9B007C40
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_div:
     ; cbnz x0, +8 (0xB5000040)
@@ -2138,7 +2283,7 @@ arm_emit_expr:
     EMIT_ARM 0x9AC00C40
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_mod:
     ; cbnz x0, +8 (0xB5000040)
@@ -2159,7 +2304,7 @@ arm_emit_expr:
     EMIT_ARM 0x9B008860
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_eq:
     ; cmp x2, x0 (0xEB00005F); cset x0, EQ (0x9A9F17E0)
@@ -2167,7 +2312,7 @@ arm_emit_expr:
     EMIT_ARM 0x9A9F17E0
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_lt:
     ; cmp x2, x0 (0xEB00005F); cset x0, LT (0x9A9FA7E0)
@@ -2175,7 +2320,7 @@ arm_emit_expr:
     EMIT_ARM 0x9A9FA7E0
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
-    jmp .done
+    jmp .done_patch_bin_op_arm
 
 .op_gt:
     ; cmp x2, x0 (0xEB00005F); cset x0, GT (0x9A9FD7E0)
@@ -2183,6 +2328,21 @@ arm_emit_expr:
     EMIT_ARM 0x9A9FD7E0
     ; mov x1, #1 -> 0xD2800021
     EMIT_ARM 0xD2800021
+    jmp .done_patch_bin_op_arm
+
+.done_patch_bin_op_arm:
+    cmp qword [rbp - 112], 0
+    je .done
+    mov rax, [r13 + 16]
+    sub rax, [rbp - 112]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    or eax, 0x14000000        ; b imm26
+    mov rdi, r13
+    mov rsi, [rbp - 112]
+    mov edx, eax
+    call patch_dword
+    mov qword [rbp - 112], 0
     jmp .done
 
 .e_un_op:
@@ -2601,6 +2761,11 @@ arm_emit_expr:
     mov [rbp - 24], rax       ; str_jz_fixup
     EMIT_ARM 0x54000000
 
+    EMIT_ARM 0xF100083F       ; cmp x1, #2 (FLOAT)
+    mov rax, [r13 + 16]
+    mov [rbp - 88], rax       ; float_jz_fixup
+    EMIT_ARM 0x54000000
+
     mov rax, [armstate + ArmState.print_int_off]
     sub rax, [r13 + 16]
     sar rax, 2
@@ -2611,6 +2776,30 @@ arm_emit_expr:
 
     mov rax, [r13 + 16]
     mov [rbp - 32], rax       ; int_jmp_fixup
+    EMIT_ARM 0x14000000
+
+.print_as_float_arm:
+    mov rax, [r13 + 16]
+    sub rax, [rbp - 88]
+    sar rax, 2
+    and eax, 0x0007FFFF
+    shl eax, 5
+    or eax, 0x54000000
+    mov rdi, r13
+    mov rsi, [rbp - 88]
+    mov edx, eax
+    call patch_dword          ; patch float_jz
+
+    mov rax, [armstate + ArmState.print_float_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax             ; bl print_float_off
+
+    mov rax, [r13 + 16]
+    mov [rbp - 96], rax       ; float_jmp_fixup
     EMIT_ARM 0x14000000
 
 .print_as_str_arm:
@@ -2706,44 +2895,68 @@ arm_emit_expr:
     EMIT_ARM 0x14000000
 
 .print_done_patch_arm:
-    mov rax, [r13 + 16]
-    sub rax, [rbp - 56]
-    sar rax, 2
-    and eax, 0x03FFFFFF
-    or eax, 0x14000000
-    mov rdi, r13
     mov rsi, [rbp - 56]
-    mov edx, eax
-    call patch_dword
-
+    test rsi, rsi
+    jz .chk_list_jmp_arm
     mov rax, [r13 + 16]
-    sub rax, [rbp - 48]
+    sub rax, rsi
     sar rax, 2
     and eax, 0x03FFFFFF
     or eax, 0x14000000
     mov rdi, r13
+    mov rdx, rax
+    call patch_dword
+
+.chk_list_jmp_arm:
     mov rsi, [rbp - 48]
-    mov edx, eax
-    call patch_dword
-
+    test rsi, rsi
+    jz .chk_str_jmp_arm
     mov rax, [r13 + 16]
-    sub rax, [rbp - 40]
+    sub rax, rsi
     sar rax, 2
     and eax, 0x03FFFFFF
     or eax, 0x14000000
     mov rdi, r13
+    mov rdx, rax
+    call patch_dword
+
+.chk_str_jmp_arm:
     mov rsi, [rbp - 40]
-    mov edx, eax
-    call patch_dword
-
+    test rsi, rsi
+    jz .chk_float_jmp_arm
     mov rax, [r13 + 16]
-    sub rax, [rbp - 32]
+    sub rax, rsi
     sar rax, 2
     and eax, 0x03FFFFFF
     or eax, 0x14000000
     mov rdi, r13
+    mov rdx, rax
+    call patch_dword
+
+.chk_float_jmp_arm:
+    mov rsi, [rbp - 96]
+    test rsi, rsi
+    jz .chk_int_jmp_arm
+    mov rax, [r13 + 16]
+    sub rax, rsi
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    or eax, 0x14000000
+    mov rdi, r13
+    mov rdx, rax
+    call patch_dword
+
+.chk_int_jmp_arm:
     mov rsi, [rbp - 32]
-    mov edx, eax
+    test rsi, rsi
+    jz .done
+    mov rax, [r13 + 16]
+    sub rax, rsi
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    or eax, 0x14000000
+    mov rdi, r13
+    mov rdx, rax
     call patch_dword
 
     jmp .done

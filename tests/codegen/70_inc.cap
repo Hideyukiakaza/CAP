@@ -1,4 +1,0 @@
-fn main():
-    i = 1
-    i++
-    print(i)

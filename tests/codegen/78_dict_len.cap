@@ -1,3 +1,0 @@
-fn main():
-    print(len({"a": 1}))
-    print(len({}))
