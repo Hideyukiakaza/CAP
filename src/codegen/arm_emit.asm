@@ -25,6 +25,7 @@ s_print_arm:             db "print", 0
 s_len_arm:               db "len", 0
 s_input_arm:             db "input", 0
 s_fstring_arm:           db "fstring", 0
+s_write_arm:             db "write", 0
 s_free_arm:              db "free", 0
 s_svc:                   db "svc", 0
 s_ret_arm:               db "ret", 0
@@ -33,7 +34,7 @@ s_mov_arm:               db "mov", 0
 section .text
 global arm_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
+extern emit_arm_write, emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
 extern sym_init, add_symbol, add_symbol_type, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol, find_symbol_entry
@@ -55,6 +56,7 @@ struc ArmState
     .format_int_off:    resq 1
     .oob_off:           resq 1
     .dict_missing_off:  resq 1
+    .write_off:         resq 1
     .fn_main_off:       resq 1
     .stack_offset:      resq 1
     .ast_root:          resq 1
@@ -132,6 +134,11 @@ arm_emit_program:
     mov [armstate + ArmState.dict_missing_off], rax
     mov rdi, r13
     call emit_arm_dict_missing_trap
+
+    mov rax, [r13 + 16]
+    mov [armstate + ArmState.write_off], rax
+    mov rdi, r13
+    call emit_arm_write
 
     mov rax, [r13 + 16]
     mov [armstate + ArmState.div_zero_off], rax
@@ -2482,6 +2489,16 @@ arm_emit_expr:
     test rax, rax
     jz .call_print
 
+.chk_write_arm:
+    cmp qword [r12 + ASTNode.val_len], 5
+    jne .chk_input
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_write_arm
+    mov rdx, 5
+    call str_ncmp
+    test rax, rax
+    jz .call_write_arm
+
 .chk_input:
     cmp qword [r12 + ASTNode.val_len], 5
     jne .chk_free
@@ -2600,6 +2617,60 @@ arm_emit_expr:
     mov rdi, r13
     mov rdx, rax
     call patch_dword
+    jmp .done
+
+.call_write_arm:
+    ; Arg 1: path_expr
+    mov rdi, [r12 + ASTNode.child1]
+    call arm_emit_expr               ; x0 = path_ptr, x1 = path_tag
+
+    ; Check x1 == 3 (STRING)
+    EMIT_ARM 0xF1000C3F              ; cmp x1, #3
+    EMIT_ARM 0x54000040              ; b.eq +2 words (.write_arg1_ok_arm)
+
+    mov rax, [armstate + ArmState.type_mismatch_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax                    ; bl type_mismatch_off
+
+.write_arg1_ok_arm:
+    ; str x0, [sp, #-16]! -> push x0 (path_ptr)
+    EMIT_ARM 0xF81F0FE0
+
+    ; Arg 2: body_expr
+    mov rdi, [r12 + ASTNode.child1]
+    mov rdi, [rdi + ASTNode.next]
+    call arm_emit_expr               ; x0 = body_ptr, x1 = body_tag
+
+    ; Check x1 == 3 (STRING)
+    EMIT_ARM 0xF1000C3F              ; cmp x1, #3
+    EMIT_ARM 0x54000040              ; b.eq +2 words (.write_arg2_ok_arm)
+
+    mov rax, [armstate + ArmState.type_mismatch_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax                    ; bl type_mismatch_off
+
+.write_arg2_ok_arm:
+    ; mov x1, x0 (body_ptr -> x1) -> 0xAA0003E1
+    EMIT_ARM 0xAA0003E1
+
+    ; ldr x0, [sp], #16 -> pop x0 (path_ptr -> x0) -> 0xF84107E0
+    EMIT_ARM 0xF84107E0
+
+    mov rax, [armstate + ArmState.write_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax                    ; bl write_off
     jmp .done
 
 .call_fstring:

@@ -1,0 +1,3 @@
+fn main():
+    write("out.txt", "one")
+    write("out.txt", "two")

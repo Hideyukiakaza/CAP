@@ -21,6 +21,7 @@ default rel
 section .data
 err_unsupported_asm: db "SyntaxError: asm block contains unsupported instruction. Supported instructions: mov, add, sub, syscall, ret, push, pop", 10, 0
 s_print:             db "print", 0
+s_write:             db "write", 0
 s_len:               db "len", 0
 s_input:             db "input", 0
 s_fstring:           db "fstring", 0
@@ -37,7 +38,7 @@ s_pop:               db "pop", 0
 section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
+extern emit_x86_write, emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
@@ -60,6 +61,7 @@ struc X86State
     .format_int_off: resq 1
     .oob_off:      resq 1
     .dict_missing_off: resq 1
+    .write_off:        resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .loop_start:   resq 1
@@ -166,6 +168,11 @@ x86_emit_program:
     mov [xstate + X86State.dict_missing_off], rax
     mov rdi, r13
     call emit_x86_dict_missing_trap
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.write_off], rax
+    mov rdi, r13
+    call emit_x86_write
 
     mov rax, [r13 + 16]
     mov [xstate + X86State.div_zero_off], rax
@@ -3367,6 +3374,16 @@ x86_emit_expr:
     test rax, rax
     jz .call_print
 
+.chk_write:
+    cmp qword [r12 + ASTNode.val_len], 5
+    jne .chk_input
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_write
+    mov rdx, 5
+    call str_ncmp
+    test rax, rax
+    jz .call_write
+
 .chk_input:
     cmp qword [r12 + ASTNode.val_len], 5
     jne .chk_free
@@ -3590,6 +3607,91 @@ x86_emit_expr:
     mov rsi, r10
     mov rdx, rax
     call patch_dword
+    jmp .done
+
+.call_write:
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr
+
+    ; cmp rdx, 3 (STRING tag)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte
+
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte           ; je +5 bytes (.write_arg1_ok)
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call type_mismatch_off
+
+.write_arg1_ok:
+    mov rdi, r13
+    mov sil, 0x50
+    call emit_byte           ; push rax (path_ptr)
+
+    mov rdi, [r12 + ASTNode.child1]
+    mov rdi, [rdi + ASTNode.next]
+    call x86_emit_expr
+
+    ; cmp rdx, 3 (STRING tag)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x03
+    call emit_byte
+
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte           ; je +5 bytes (.write_arg2_ok)
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call type_mismatch_off
+
+.write_arg2_ok:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC6
+    call emit_byte           ; mov rsi, rax (body_ptr)
+
+    mov sil, 0x5F
+    call emit_byte           ; pop rdi (path_ptr)
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.write_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword          ; call write_off
     jmp .done
 
 .call_fstring:

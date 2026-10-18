@@ -18,8 +18,8 @@ default rel
 %include "src/codegen/target.inc"
 
 section .text
-global emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
-global emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
+global emit_x86_write, emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
+global emit_arm_write, emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
 extern emit_bytes
 
 emit_x86_print_int:
@@ -1993,3 +1993,145 @@ _stub_x86_format_int:
     pop rbp
     ret
 _stub_x86_format_int_end:
+
+
+emit_x86_write:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel _stub_x86_write]
+    mov rdx, _stub_x86_write_end - _stub_x86_write
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+
+emit_arm_write:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel .bytes_arm_write]
+    mov rdx, .bytes_arm_write_end - .bytes_arm_write
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+.bytes_arm_write:
+    db 0xFD, 0x7B, 0xBD, 0xA9
+    db 0xFD, 0x03, 0x00, 0x91
+    db 0xF3, 0x53, 0x01, 0xA9
+    db 0xF5, 0x5B, 0x02, 0xA9
+    db 0xF3, 0x03, 0x00, 0xAA
+    db 0xF4, 0x03, 0x01, 0xAA
+    db 0x15, 0x00, 0x80, 0xD2
+    db 0x89, 0x6A, 0x75, 0x38
+    db 0x69, 0x00, 0x00, 0x34
+    db 0xB5, 0x06, 0x00, 0x91
+    db 0xFD, 0xFF, 0xFF, 0x17
+    db 0x08, 0x07, 0x80, 0xD2
+    db 0x60, 0x0C, 0x80, 0x92
+    db 0xE1, 0x03, 0x13, 0xAA
+    db 0x22, 0x48, 0x80, 0xD2
+    db 0x83, 0x34, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x1F, 0x00, 0x00, 0xF1
+    db 0x0B, 0x02, 0x00, 0x54
+    db 0xF6, 0x03, 0x00, 0xAA
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0xE0, 0x03, 0x16, 0xAA
+    db 0xE1, 0x03, 0x14, 0xAA
+    db 0xE2, 0x03, 0x15, 0xAA
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x28, 0x07, 0x80, 0xD2
+    db 0xE0, 0x03, 0x16, 0xAA
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x00, 0x00, 0x80, 0xD2
+    db 0x21, 0x00, 0x80, 0xD2
+    db 0xF3, 0x53, 0x41, 0xA9
+    db 0xF5, 0x5B, 0x42, 0xA9
+    db 0xFD, 0x7B, 0xC3, 0xA8
+    db 0xC0, 0x03, 0x5F, 0xD6
+    db 0x40, 0x00, 0x80, 0xD2
+    db 0xE1, 0x00, 0x00, 0x10
+    db 0xE2, 0x03, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xA0, 0x0C, 0x80, 0xD2
+    db 0xC8, 0x0B, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db "RuntimeError: cannot open file", 10, 0
+.bytes_arm_write_end:
+
+
+_stub_x86_write:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+
+    mov rbx, rdi             ; path_ptr
+    mov r12, rsi             ; body_ptr
+
+    mov r13, r12
+    xor rcx, rcx
+.body_len_loop:
+    cmp byte [r13 + rcx], 0
+    je .body_len_done
+    inc rcx
+    jmp .body_len_loop
+.body_len_done:
+    mov r14, rcx             ; save body_len in r14 (syscall clobbers rcx)
+
+    mov rdx, 420
+    mov rsi, 577
+    mov rdi, rbx
+    mov rax, 2
+    syscall
+
+    test rax, rax
+    js .cannot_open
+
+    mov rbx, rax             ; fd
+
+    mov rdx, r14             ; body_len
+    mov rsi, r12
+    mov rdi, rbx
+    mov rax, 1
+    syscall
+
+    mov rdi, rbx
+    mov rax, 3
+    syscall
+
+    xor rax, rax             ; return 0
+    mov rdx, 1               ; INT tag = 1
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.cannot_open:
+    mov rdi, 2               ; STDERR
+    lea rsi, [rel .cannot_msg]
+    mov rdx, 31              ; len
+    mov rax, 1               ; sys_write
+    syscall
+    mov rdi, 101             ; exit 101
+    mov rax, 60              ; sys_exit
+    syscall
+.cannot_msg: db "RuntimeError: cannot open file", 10
+_stub_x86_write_end:

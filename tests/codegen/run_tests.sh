@@ -11,6 +11,7 @@ fail=0
 skip=0
 
 run_one() {
+    rm -f out.txt
     local src="$1"
     local base
     base="$(basename "$src" .cap)"
@@ -96,7 +97,7 @@ $stderr_arm
 EOF
 )"
     fi
-    rm -f "$bin_arm" /tmp/cap_test_stderr_arm
+    rm -f "$bin_arm" /tmp/cap_test_stderr_arm out.txt
 
     if [ "$MODE" = "--update" ]; then
         mkdir -p "$ROOT/golden/x86"
