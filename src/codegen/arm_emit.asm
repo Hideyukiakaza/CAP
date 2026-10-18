@@ -778,6 +778,8 @@ arm_emit_stmt:
 
     ; str x0, [sp, #-16]! -> push x0
     EMIT_ARM 0xF81F0FE0
+    ; str x1, [sp, #-16]! -> push x1
+    EMIT_ARM 0xF81F0FE1
 
     mov rbx, [arm_defer_count]
 .ret_unwind_loop:
@@ -791,6 +793,8 @@ arm_emit_stmt:
     jmp .ret_unwind_loop
 
 .ret_unwind_done:
+    ; ldr x1, [sp], #16 -> pop x1
+    EMIT_ARM 0xF84107E1
     ; ldr x0, [sp], #16 -> pop x0
     EMIT_ARM 0xF84107E0
 

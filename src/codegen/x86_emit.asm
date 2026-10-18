@@ -945,6 +945,8 @@ x86_emit_stmt:
     mov rdi, r13
     mov sil, 0x50
     call emit_byte           ; push rax (save return val)
+    mov sil, 0x52
+    call emit_byte           ; push rdx (save return tag)
 
     mov rbx, [defer_count]
 .ret_unwind_loop:
@@ -959,6 +961,8 @@ x86_emit_stmt:
 
 .ret_unwind_done:
     mov rdi, r13
+    mov sil, 0x5A
+    call emit_byte           ; pop rdx (restore return tag)
     mov sil, 0x58
     call emit_byte           ; pop rax (restore return val)
 
