@@ -1,6 +1,6 @@
 # CAP User Guide & Tutorial
 
-Welcome to CAP v0.1.1! This guide walks you through installing the compiler, writing hosted applications, and creating bare-metal freestanding programs for QEMU.
+Welcome to CAP v0.1.2! This guide walks you through installing the compiler, writing hosted applications, and creating bare-metal freestanding programs for QEMU.
 
 ## 1. Installation
 
@@ -20,7 +20,7 @@ make clean && make
 ```
 Output:
 ```
-capc 0.1.1
+capc 0.1.2
 ```
 
 ## 2. Hello World
@@ -29,7 +29,7 @@ Small hosted scripts need no `main` wrapper!
 
 Create `hello.cap`:
 ```cap
-print("Hello, CAP v0.1.1!")
+print("Hello, CAP v0.1.2!")
 ```
 
 Compile and run:
@@ -39,7 +39,7 @@ Compile and run:
 ```
 Output:
 ```
-Hello, CAP v0.1.1!
+Hello, CAP v0.1.2!
 ```
 
 ## 3. Variables and Functions

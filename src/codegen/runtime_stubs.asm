@@ -18,8 +18,8 @@ default rel
 %include "src/codegen/target.inc"
 
 section .text
-global emit_x86_write, emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
-global emit_arm_write, emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
+global emit_x86_window, emit_x86_iws, emit_x86_write, emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
+global emit_arm_window, emit_arm_iws, emit_arm_write, emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
 extern emit_bytes
 
 emit_x86_print_int:
@@ -2135,3 +2135,224 @@ _stub_x86_write:
     syscall
 .cannot_msg: db "RuntimeError: cannot open file", 10
 _stub_x86_write_end:
+
+
+emit_x86_window:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel _stub_x86_window]
+    mov rdx, _stub_x86_window_end - _stub_x86_window
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+
+emit_x86_iws:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel _stub_x86_iws]
+    mov rdx, _stub_x86_iws_end - _stub_x86_iws
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+
+emit_arm_window:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel .bytes_arm_window]
+    mov rdx, .bytes_arm_window_end - .bytes_arm_window
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+.bytes_arm_window:
+    db 0xFD, 0x7B, 0xBD, 0xA9
+    db 0xFD, 0x03, 0x00, 0x91
+    db 0xF3, 0x53, 0x01, 0xA9
+    db 0xF3, 0x03, 0x00, 0xAA
+    db 0xF4, 0x03, 0x01, 0xAA
+    db 0xC8, 0x18, 0x80, 0xD2
+    db 0x20, 0x00, 0x80, 0xD2
+    db 0x21, 0x00, 0x80, 0xD2
+    db 0x02, 0x00, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x1F, 0x00, 0x00, 0xF1
+    db 0x4B, 0x03, 0x00, 0x54
+    db 0xF5, 0x03, 0x00, 0xAA
+    db 0xE1, 0x83, 0x00, 0x91
+    db 0x22, 0x00, 0x80, 0x52
+    db 0x22, 0x00, 0x00, 0x79
+    db 0xE2, 0x05, 0x80, 0x52
+    db 0x22, 0x08, 0x00, 0x39
+    db 0x82, 0x0E, 0x80, 0x52
+    db 0x22, 0x0C, 0x00, 0x39
+    db 0x68, 0x19, 0x80, 0xD2
+    db 0xE0, 0x03, 0x15, 0xAA
+    db 0xC2, 0x0D, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x1F, 0x00, 0x00, 0xF1
+    db 0x2B, 0x01, 0x00, 0x54
+    db 0x28, 0x07, 0x80, 0xD2
+    db 0xE0, 0x03, 0x15, 0xAA
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x00, 0x00, 0x80, 0xD2
+    db 0x21, 0x00, 0x80, 0xD2
+    db 0xF3, 0x53, 0x41, 0xA9
+    db 0xFD, 0x7B, 0xC3, 0xA8
+    db 0xC0, 0x03, 0x5F, 0xD6
+    db 0x28, 0x07, 0x80, 0xD2
+    db 0xE0, 0x03, 0x15, 0xAA
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0x40, 0x00, 0x80, 0xD2
+    db 0xE1, 0x00, 0x00, 0x10
+    db 0x22, 0x04, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xA0, 0x0C, 0x80, 0xD2
+    db 0xC8, 0x0B, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db "RuntimeError: cannot open display", 10, 0, 0
+.bytes_arm_window_end:
+
+
+emit_arm_iws:
+    push rbp
+    mov rbp, rsp
+    push r12
+    mov r12, rdi
+
+    lea rsi, [rel .bytes_arm_iws]
+    mov rdx, .bytes_arm_iws_end - .bytes_arm_iws
+    mov rdi, r12
+    call emit_bytes
+
+    pop r12
+    pop rbp
+    ret
+
+.bytes_arm_iws:
+    db 0x40, 0x00, 0x80, 0xD2
+    db 0xE1, 0x00, 0x00, 0x10
+    db 0x22, 0x04, 0x80, 0xD2
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xA0, 0x0C, 0x80, 0xD2
+    db 0xC8, 0x0B, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db "RuntimeError: invalid window size", 10, 0, 0
+.bytes_arm_iws_end:
+
+
+_stub_x86_window:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+
+    mov rbx, rdi             ; width
+    mov r12, rsi             ; height
+
+    mov rdx, 0
+    mov rsi, 1
+    mov rdi, 1
+    mov rax, 41
+    syscall
+
+    test rax, rax
+    js .no_display
+
+    mov r13, rax             ; sockfd
+
+    sub rsp, 128
+    mov word [rsp], 1        ; AF_UNIX = 1
+    mov byte [rsp + 2], '/'
+    mov byte [rsp + 3], 't'
+    mov byte [rsp + 4], 'm'
+    mov byte [rsp + 5], 'p'
+    mov byte [rsp + 6], '/'
+    mov byte [rsp + 7], '.'
+    mov byte [rsp + 8], 'X'
+    mov byte [rsp + 9], '1'
+    mov byte [rsp + 10], '1'
+    mov byte [rsp + 11], '-'
+    mov byte [rsp + 12], 'u'
+    mov byte [rsp + 13], 'n'
+    mov byte [rsp + 14], 'i'
+    mov byte [rsp + 15], 'x'
+    mov byte [rsp + 16], '/'
+    mov byte [rsp + 17], 'X'
+    mov byte [rsp + 18], '0'
+    mov byte [rsp + 19], 0
+
+    mov rdx, 110
+    mov rsi, rsp
+    mov rdi, r13
+    mov rax, 42
+    syscall
+
+    test rax, rax
+    js .close_no_display
+
+    mov rdi, r13
+    mov rax, 3               ; sys_close
+    syscall
+
+    add rsp, 128
+    xor rax, rax             ; return 0
+    mov rdx, 1               ; INT tag = 1
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+
+.close_no_display:
+    mov rdi, r13
+    mov rax, 3               ; sys_close
+    syscall
+    add rsp, 128
+
+.no_display:
+    mov rdi, 2               ; STDERR
+    lea rsi, [rel .no_display_msg]
+    mov rdx, 33              ; len
+    mov rax, 1               ; sys_write
+    syscall
+    mov rdi, 101             ; exit 101
+    mov rax, 60              ; sys_exit
+    syscall
+.no_display_msg: db "RuntimeError: cannot open display", 10
+_stub_x86_window_end:
+
+
+_stub_x86_iws:
+    mov rdi, 2               ; STDERR
+    lea rsi, [rel .iws_msg]
+    mov rdx, 33              ; len
+    mov rax, 1               ; sys_write
+    syscall
+    mov rdi, 101             ; exit 101
+    mov rax, 60              ; sys_exit
+    syscall
+.iws_msg: db "RuntimeError: invalid window size", 10
+_stub_x86_iws_end:

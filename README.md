@@ -1,4 +1,4 @@
-# CAP Programming Language (v0.1.1)
+# CAP Programming Language (v0.1.2)
 
 CAP is a compiled systems programming language featuring Python-like syntax, dynamic runtime type tagging, and direct machine code emission into ELF executables without intermediate compiler passes or LLVM.
 
@@ -26,7 +26,7 @@ CAP is a compiled systems programming language featuring Python-like syntax, dyn
 - *Goal:* Provide seamless inline assembly (`asm:`) with zero compiler frame overhead for OS kernels and drivers.
 - *Goal:* Keep the core toolchain self-contained in pure NASM x86-64 assembly without external C runtime dependencies.
 
-**Current Status:** Release `v0.1.1` (Alpha) targeting Linux x86-64 hosts.
+**Current Status:** Release `v0.1.2` (Alpha) targeting Linux x86-64 hosts.
 
 ---
 
@@ -36,7 +36,7 @@ Small hosted scripts need no `main` wrapper; CAP is not a Python subset.
 
 Source file (`docs/examples/01_hello.cap`):
 ```cap
-print("Hello, CAP v0.1.1!")
+print("Hello, CAP v0.1.2!")
 ```
 
 Compile and run:
@@ -47,7 +47,7 @@ Compile and run:
 
 Actual output:
 ```
-Hello, CAP v0.1.1!
+Hello, CAP v0.1.2!
 ```
 
 *Note:* `fn main():` still works for hosted targets, and is strictly required for freestanding targets (`--freestanding`) and `naked fn main():`.
@@ -88,7 +88,7 @@ capc [-a] [--freestanding|-k] [--boot-thin] [--no-boot-stub] [-o <outfile>] [--d
 - `--no-boot-stub`: Emit bare ELF64 executable with `e_entry` pointing directly at `main()`.
 - `--dump-ast`: Print AST node hierarchy and exit.
 - `--dump-tokens`: Print lexer token stream debug output and exit.
-- `-v` or `--version`: Print `capc 0.1.1` and exit 0.
+- `-v` or `--version`: Print `capc 0.1.2` and exit 0.
 
 ### Reserved Exit Codes
 - `0`: Successful compilation or CLI flag execution.

@@ -1,0 +1,2 @@
+fn main():
+    window(0, 100)
