@@ -68,6 +68,7 @@ s_builtin_range:    db "range", 0
 s_builtin_fstring:  db "fstring", 0
 s_builtin_len:      db "len", 0
 s_builtin_write:    db "write", 0
+s_builtin_window:   db "window", 0
 
 section .text
 global compile_program
@@ -1614,6 +1615,11 @@ is_freestanding_restricted:
     test rax, rax
     jnz .r_yes
 
+    mov rsi, s_builtin_window
+    call check_match
+    test rax, rax
+    jnz .r_yes
+
     xor rax, rax
     pop r12
     pop rbx
@@ -1667,6 +1673,11 @@ is_builtin_name:
     jnz .b_yes
 
     mov rsi, s_builtin_write
+    call check_match
+    test rax, rax
+    jnz .b_yes
+
+    mov rsi, s_builtin_window
     call check_match
     test rax, rax
     jnz .b_yes

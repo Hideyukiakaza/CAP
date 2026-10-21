@@ -21,7 +21,7 @@ default rel
 section .data
 err_syntax: db "SyntaxError: Unexpected token", 10, 0
 err_expected_colon: db "SyntaxError: Expected ':'", 10, 0
-err_expected_colon_ternary: db "SyntaxError: expected ':' in ternary", 0
+err_expected_colon_ternary: db "SyntaxError: expected ':' in ternary (line ", 0
 err_python_if_expr: db "SyntaxError: CAP uses 'cond ? a : b' for conditional expressions", 0
 err_expected_indent: db "SyntaxError: Expected indented block", 10, 0
 err_expected_ident: db "SyntaxError: Expected identifier after '.'", 10, 0
@@ -35,8 +35,8 @@ s_line_is: db "Token line: ", 0
 s_val_is: db "Token val: ", 0
 s_prog_peek: db "Program peek token type: ", 0
 s_fstring: db "fstring", 0
-err_fstr_unexpected_colon: db "SyntaxError: unexpected ':' in f-string expression", 0
-err_fstr_unterminated: db "SyntaxError: unterminated f-string expression", 0
+err_fstr_unexpected_colon: db "SyntaxError: unexpected ':' in f-string expression (line ", 0
+err_fstr_unterminated: db "SyntaxError: unterminated f-string expression (line ", 0
 s_newline: db 10, 0
 s_close_paren_nl: db ")", 10, 0
 

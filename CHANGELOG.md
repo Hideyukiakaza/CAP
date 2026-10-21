@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [0.1.2] - 2026-10-04
+
+### Added
+- `window(width, height)` builtin function for X11 window creation.
+- `write(path, body)` builtin function for file creation and overwriting.
+- Post-increment `name++` statement desugaring.
+- List literals `[e1, e2, ...]` and dictionary literals `{"k1": v1, ...}` with indexing, length, and runtime printing.
+- Double-precision IEEE-754 floating-point arithmetic (`+`, `-`, `*`, `/`) and runtime formatting.
+- `(line N)` error location tag formatting for ternary and f-string syntax errors.
+- Bumped compiler version string to `capc 0.1.2`.
+
 ## [0.1.1] - 2026-10-03
 
 ### Added

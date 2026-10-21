@@ -1,0 +1,7 @@
+fn classify(n):
+    return n == 0 ? "zero" : (n % 2 == 0 ? "even" : "odd")
+
+fn main():
+    print(classify(0))
+    print(classify(4))
+    print(classify(7))

@@ -779,9 +779,9 @@ lex_fstring:
 .fstr_loop:
     mov al, [rsi + rcx]
     test al, al
-    jz .err_fstr
+    jz .chk_unterm_fstr
     cmp al, 10
-    je .err_fstr
+    je .chk_unterm_fstr
 
     test r13, r13
     jnz .fstr_in_str
@@ -844,6 +844,10 @@ lex_fstring:
     pop r12
     pop rbx
     ret
+
+.chk_unterm_fstr:
+    test r12, r12
+    jnz .fstr_done
 
 .err_fstr:
     mov rsi, err_unterm_string
