@@ -1,0 +1,2 @@
+fn main():
+    bars(1)

@@ -23,6 +23,7 @@ err_unsupported_asm: db "SyntaxError: asm block contains unsupported instruction
 s_print:             db "print", 0
 s_write:             db "write", 0
 s_window:            db "window", 0
+s_bars:              db "bars", 0
 s_len:               db "len", 0
 s_input:             db "input", 0
 s_fstring:           db "fstring", 0
@@ -39,7 +40,7 @@ s_pop:               db "pop", 0
 section .text
 global x86_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_x86_window, emit_x86_iws, emit_x86_write, emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
+extern emit_x86_bars, emit_x86_window, emit_x86_iws, emit_x86_write, emit_x86_print_int, emit_x86_print_float, emit_x86_print_str, emit_x86_div_zero_trap, emit_x86_overflow_trap, emit_x86_alloc, emit_x86_free, emit_x86_input, emit_x86_type_mismatch_trap, emit_x86_format_int, emit_x86_oob_trap, emit_x86_print_list, emit_x86_dict_missing_trap, emit_x86_print_dict
 extern sym_init, add_symbol, add_symbol_type, find_symbol_entry, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol
@@ -65,6 +66,7 @@ struc X86State
     .write_off:        resq 1
     .window_off:       resq 1
     .iws_off:          resq 1
+    .bars_off:         resq 1
     .fn_main_off:  resq 1
     .stack_offset: resq 1
     .loop_start:   resq 1
@@ -186,6 +188,11 @@ x86_emit_program:
     mov [xstate + X86State.iws_off], rax
     mov rdi, r13
     call emit_x86_iws
+
+    mov rax, [r13 + 16]
+    mov [xstate + X86State.bars_off], rax
+    mov rdi, r13
+    call emit_x86_bars
 
     mov rax, [r13 + 16]
     mov [xstate + X86State.div_zero_off], rax
@@ -3379,13 +3386,23 @@ x86_emit_expr:
 
 .chk_print:
     cmp qword [r12 + ASTNode.val_len], 5
-    jne .chk_window
+    jne .chk_bars
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_print
     mov rdx, 5
     call str_ncmp
     test rax, rax
     jz .call_print
+
+.chk_bars:
+    cmp qword [r12 + ASTNode.val_len], 4
+    jne .chk_window
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_bars
+    mov rdx, 4
+    call str_ncmp
+    test rax, rax
+    jz .call_bars
 
 .chk_window:
     cmp qword [r12 + ASTNode.val_len], 6
@@ -3630,6 +3647,81 @@ x86_emit_expr:
     mov rsi, r10
     mov rdx, rax
     call patch_dword
+    jmp .done
+
+.call_bars:
+    ; Arg 1: list_expr
+    mov rdi, [r12 + ASTNode.child1]
+    call x86_emit_expr               ; rax = list_ptr, rdx = list_tag
+
+    ; Check rdx == 4 (LIST tag)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0xFA
+    call emit_byte
+    mov sil, 0x04
+    call emit_byte                  ; cmp rdx, 4
+
+    mov sil, 0x74
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte                  ; je +5 bytes (.bars_arg_tag_ok)
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.type_mismatch_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword                 ; call type_mismatch_off
+
+.bars_arg_tag_ok:
+    ; Check len(list) > 0 (cmp qword [rax], 0; jgt +5)
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x83
+    call emit_byte
+    mov sil, 0x38
+    call emit_byte                  ; cmp qword [rax], 0
+    mov sil, 0x00
+    call emit_byte
+
+    mov sil, 0x77
+    call emit_byte
+    mov sil, 0x05
+    call emit_byte                  ; ja +5 bytes (.bars_len_ok)
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.iws_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword                 ; call iws_off
+
+.bars_len_ok:
+    mov rdi, r13
+    mov sil, 0x48
+    call emit_byte
+    mov sil, 0x89
+    call emit_byte
+    mov sil, 0xC7
+    call emit_byte                  ; mov rdi, rax (list_ptr)
+
+    mov sil, 0xE8
+    call emit_byte
+    mov rax, [xstate + X86State.bars_off]
+    mov rcx, [r13 + 16]
+    add rcx, 4
+    sub rax, rcx
+    mov esi, eax
+    call emit_dword                 ; call bars_off
     jmp .done
 
 .call_window:

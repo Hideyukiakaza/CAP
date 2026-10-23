@@ -27,6 +27,7 @@ s_input_arm:             db "input", 0
 s_fstring_arm:           db "fstring", 0
 s_write_arm:             db "write", 0
 s_window_arm:            db "window", 0
+s_bars_arm:              db "bars", 0
 s_free_arm:              db "free", 0
 s_svc:                   db "svc", 0
 s_ret_arm:               db "ret", 0
@@ -35,7 +36,7 @@ s_mov_arm:               db "mov", 0
 section .text
 global arm_emit_program
 extern emit_byte, emit_dword, emit_qword, emit_bytes, patch_dword
-extern emit_arm_window, emit_arm_iws, emit_arm_write, emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
+extern emit_arm_bars, emit_arm_window, emit_arm_iws, emit_arm_write, emit_arm_print_int, emit_arm_print_float, emit_arm_print_str, emit_arm_div_zero_trap, emit_arm_overflow_trap, emit_arm_alloc, emit_arm_free, emit_arm_input, emit_arm_type_mismatch_trap, emit_arm_format_int, emit_arm_oob_trap, emit_arm_print_list, emit_arm_dict_missing_trap, emit_arm_print_dict
 extern sym_init, add_symbol, add_symbol_type, find_symbol_offset
 extern find_struct_decl, find_struct_field, resolve_field_access
 extern fn_sym_init, add_fn_symbol, find_fn_symbol, find_symbol_entry
@@ -60,6 +61,7 @@ struc ArmState
     .write_off:         resq 1
     .window_off:        resq 1
     .iws_off:           resq 1
+    .bars_off:          resq 1
     .fn_main_off:       resq 1
     .stack_offset:      resq 1
     .ast_root:          resq 1
@@ -152,6 +154,11 @@ arm_emit_program:
     mov [armstate + ArmState.iws_off], rax
     mov rdi, r13
     call emit_arm_iws
+
+    mov rax, [r13 + 16]
+    mov [armstate + ArmState.bars_off], rax
+    mov rdi, r13
+    call emit_arm_bars
 
     mov rax, [r13 + 16]
     mov [armstate + ArmState.div_zero_off], rax
@@ -2494,13 +2501,23 @@ arm_emit_expr:
 
 .chk_print:
     cmp qword [r12 + ASTNode.val_len], 5
-    jne .chk_window_arm
+    jne .chk_bars_arm
     mov rdi, [r12 + ASTNode.val]
     mov rsi, s_print_arm
     mov rdx, 5
     call str_ncmp
     test rax, rax
     jz .call_print
+
+.chk_bars_arm:
+    cmp qword [r12 + ASTNode.val_len], 4
+    jne .chk_window_arm
+    mov rdi, [r12 + ASTNode.val]
+    mov rsi, s_bars_arm
+    mov rdx, 4
+    call str_ncmp
+    test rax, rax
+    jz .call_bars_arm
 
 .chk_window_arm:
     cmp qword [r12 + ASTNode.val_len], 6
@@ -2640,6 +2657,47 @@ arm_emit_expr:
     mov rdi, r13
     mov rdx, rax
     call patch_dword
+    jmp .done
+
+.call_bars_arm:
+    ; Arg 1: list_expr
+    mov rdi, [r12 + ASTNode.child1]
+    call arm_emit_expr               ; x0 = list_ptr, x1 = list_tag
+
+    ; Check x1 == 4 (LIST)
+    EMIT_ARM 0xF100103F              ; cmp x1, #4
+    EMIT_ARM 0x54000040              ; b.eq +2 words (.bars_arg_tag_ok_arm)
+
+    mov rax, [armstate + ArmState.type_mismatch_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax                    ; bl type_mismatch_off
+
+.bars_arg_tag_ok_arm:
+    ; Check len(list) > 0 (ldr x2, [x0]; cmp x2, #0; b.gt +2 words)
+    EMIT_ARM 0xF9400002              ; ldr x2, [x0]
+    EMIT_ARM 0xF100005F              ; cmp x2, #0
+    EMIT_ARM 0x5400004C              ; b.gt +2 words (.bars_len_ok_arm)
+
+    mov rax, [armstate + ArmState.iws_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax                    ; bl iws_off
+
+.bars_len_ok_arm:
+    mov rax, [armstate + ArmState.bars_off]
+    sub rax, [r13 + 16]
+    sar rax, 2
+    and eax, 0x03FFFFFF
+    mov r8d, 0x94000000
+    or eax, r8d
+    EMIT_ARM eax                    ; bl bars_off
     jmp .done
 
 .call_window_arm:
