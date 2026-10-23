@@ -80,6 +80,13 @@ fn main():
 ```
 
 ### F-Strings
+### Charting
+`bars(list)` opens a 400x200 window displaying vertical bars for integer values in `list`.
+
+```cap
+bars([1, 3, 2, 5, 4])
+```
+
 F-strings `f"..."` evaluate embedded sub-expressions inside `{...}`. Double braces `{{` and `}}` unescape to literal `{` and `}`.
 
 

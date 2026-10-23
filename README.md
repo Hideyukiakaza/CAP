@@ -15,7 +15,17 @@ CAP is a compiled systems programming language featuring Python-like syntax, dyn
 - [10. Known Limitations and Roadmap](#10-known-limitations-and-roadmap)
 - [11. Project Layout and Building](#11-project-layout-and-building)
 
+### Chart Example
+
+Source file (`docs/examples/15_chart.cap`):
+```cap
+bars([1, 3, 2, 5, 4])
+```
+
+This opens a 400x200 window showing five vertical bars corresponding to the list values. On a machine without an active X11 display, the program outputs `RuntimeError: cannot open display` and exits with status 101.
+
 ---
+
 
 ## 1. Vision and Goals
 
