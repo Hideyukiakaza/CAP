@@ -2277,7 +2277,7 @@ emit_arm_window:
     db 0xC2, 0x0D, 0x80, 0xD2
     db 0x01, 0x00, 0x00, 0xD4
     db 0x1F, 0x00, 0x00, 0xF1
-    db 0x0A, 0x12, 0x00, 0x54
+    db 0x2A, 0x12, 0x00, 0x54
     db 0x28, 0x07, 0x80, 0xD2
     db 0xE0, 0x03, 0x15, 0xAA
     db 0x01, 0x00, 0x00, 0xD4
@@ -2287,7 +2287,7 @@ emit_arm_window:
     db 0x02, 0x00, 0x80, 0xD2
     db 0x01, 0x00, 0x00, 0xD4
     db 0x1F, 0x00, 0x00, 0xF1
-    db 0x4B, 0x13, 0x00, 0x54
+    db 0xCB, 0x1A, 0x00, 0x54
     db 0xF5, 0x03, 0x00, 0xAA
     db 0xE1, 0x03, 0x01, 0x91
     db 0x22, 0x00, 0x80, 0x52
@@ -2332,7 +2332,7 @@ emit_arm_window:
     db 0xC2, 0x0D, 0x80, 0xD2
     db 0x01, 0x00, 0x00, 0xD4
     db 0x1F, 0x00, 0x00, 0xF1
-    db 0x4B, 0x0D, 0x00, 0x54
+    db 0xCB, 0x14, 0x00, 0x54
     db 0xE1, 0x03, 0x01, 0x91
     db 0x82, 0x0D, 0x80, 0x52
     db 0x62, 0x01, 0xA0, 0x72
@@ -2349,11 +2349,11 @@ emit_arm_window:
     db 0x02, 0x01, 0x80, 0xD2
     db 0x01, 0x00, 0x00, 0xD4
     db 0x1F, 0x20, 0x00, 0xF1
-    db 0x2B, 0x0B, 0x00, 0x54
+    db 0xAB, 0x12, 0x00, 0x54
     db 0xE1, 0x03, 0x01, 0x91
     db 0x22, 0x00, 0x40, 0x39
     db 0x5F, 0x04, 0x00, 0x71
-    db 0xA1, 0x0A, 0x00, 0x54
+    db 0x21, 0x12, 0x00, 0x54
     db 0x36, 0x0C, 0x40, 0x79
     db 0xD6, 0xF6, 0x7E, 0xD3
     db 0xE8, 0x07, 0x80, 0xD2
@@ -2416,11 +2416,71 @@ emit_arm_window:
     db 0x05, 0x00, 0x80, 0xD2
     db 0x01, 0x00, 0x00, 0xD4
     db 0x1F, 0x04, 0x00, 0xF1
-    db 0xAB, 0x00, 0x00, 0x54
+    db 0x2B, 0x08, 0x00, 0x54
     db 0xE1, 0x03, 0x01, 0x91
     db 0x22, 0x00, 0x40, 0x39
     db 0x5F, 0x00, 0x00, 0x71
-    db 0x40, 0x02, 0x00, 0x54
+    db 0xC0, 0x09, 0x00, 0x54
+    db 0x3C, 0x00, 0x00, 0x14
+    db 0xE1, 0x03, 0x01, 0x91
+    db 0x22, 0x00, 0x80, 0x52
+    db 0x22, 0x00, 0x00, 0xB9
+    db 0x22, 0x00, 0x80, 0x52
+    db 0x82, 0x01, 0xA0, 0x72
+    db 0x22, 0x04, 0x00, 0xB9
+    db 0x42, 0x00, 0x80, 0x52
+    db 0x22, 0x08, 0x00, 0xB9
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0xE0, 0x03, 0x15, 0xAA
+    db 0x82, 0x01, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xE1, 0x03, 0x01, 0x91
+    db 0x42, 0x00, 0x80, 0x52
+    db 0x22, 0x00, 0x00, 0xB9
+    db 0x02, 0x00, 0x80, 0x52
+    db 0x02, 0x04, 0xA0, 0x72
+    db 0x22, 0x04, 0x00, 0xB9
+    db 0x22, 0x00, 0x80, 0x52
+    db 0x22, 0x08, 0x00, 0xB9
+    db 0xA2, 0x01, 0x80, 0x52
+    db 0x22, 0x0C, 0x00, 0xB9
+    db 0xE2, 0xEE, 0x8D, 0x52
+    db 0xE2, 0x6B, 0xAC, 0x72
+    db 0x22, 0x10, 0x00, 0xB9
+    db 0xE2, 0xAD, 0x8D, 0x52
+    db 0x02, 0xEE, 0xAD, 0x72
+    db 0x22, 0x14, 0x00, 0xB9
+    db 0x62, 0x2E, 0x8D, 0x52
+    db 0x82, 0x0E, 0xA0, 0x72
+    db 0x22, 0x18, 0x00, 0xB9
+    db 0x82, 0x00, 0x80, 0x52
+    db 0x22, 0x1C, 0x00, 0xB9
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0xE0, 0x03, 0x15, 0xAA
+    db 0x02, 0x04, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xE1, 0x03, 0x01, 0x91
+    db 0x82, 0x00, 0x80, 0x52
+    db 0x22, 0x00, 0x00, 0xB9
+    db 0x02, 0x00, 0x80, 0x52
+    db 0x82, 0x01, 0xA0, 0x72
+    db 0x22, 0x04, 0x00, 0xB9
+    db 0xE2, 0x00, 0x80, 0x52
+    db 0x22, 0x08, 0x00, 0xB9
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0xE0, 0x03, 0x15, 0xAA
+    db 0x82, 0x01, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
+    db 0xE1, 0x03, 0x01, 0x91
+    db 0xE2, 0x00, 0x80, 0x52
+    db 0x22, 0x00, 0x00, 0xB9
+    db 0xC2, 0x00, 0x80, 0x52
+    db 0x02, 0x01, 0xA0, 0x72
+    db 0x22, 0x04, 0x00, 0xB9
+    db 0x08, 0x08, 0x80, 0xD2
+    db 0xE0, 0x03, 0x15, 0xAA
+    db 0x02, 0x01, 0x80, 0xD2
+    db 0x01, 0x00, 0x00, 0xD4
     db 0xE0, 0x03, 0x01, 0x91
     db 0x42, 0x00, 0x80, 0xD2
     db 0x02, 0x00, 0x00, 0xF9
@@ -2494,16 +2554,14 @@ _stub_x86_window:
     mov r13, rsi             ; height
 
     ; --- TRY WAYLAND FIRST ---
-    ; sys_getuid (102)
-    mov rax, 102
+    mov rax, 102             ; sys_getuid
     syscall
     mov r15, rax             ; r15 = uid
 
-    ; sys_socket(1, 1, 0)
     mov rdx, 0
     mov rsi, 1
     mov rdi, 1
-    mov rax, 41
+    mov rax, 41              ; sys_socket
     syscall
 
     test rax, rax
@@ -2511,8 +2569,7 @@ _stub_x86_window:
 
     mov r14, rax             ; r14 = wayland_sockfd
 
-    ; Format /run/user/<uid>/wayland-0
-    sub rsp, 256
+    sub rsp, 2048
     mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 'r'
@@ -2525,7 +2582,6 @@ _stub_x86_window:
     mov byte [rsp + 10], 'r'
     mov byte [rsp + 11], '/'
 
-    ; Format uid decimal digits at rsp + 12
     lea rbx, [rsp + 12]
     mov rax, r15             ; uid
     mov rdi, 10
@@ -2539,7 +2595,6 @@ _stub_x86_window:
     test rax, rax
     jnz .win_uid_loop
 
-    ; Reverse digits in place
     mov rsi, rcx
     dec rsi
     xor rdi, rdi
@@ -2555,7 +2610,6 @@ _stub_x86_window:
     jmp .win_rev_uid
 .win_rev_done:
 
-    ; Append /wayland-0
     lea rbx, [rbx + rcx]
     mov byte [rbx], '/'
     mov byte [rbx + 1], 'w'
@@ -2576,13 +2630,12 @@ _stub_x86_window:
     syscall
 
     test rax, rax
-    jns .wayland_connected
+    jns .wl_handshake
 
-    ; Wayland connect failed -> close wayland socket & fallback to X11
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
-    add rsp, 256
+    add rsp, 2048
 
 .try_x11:
     ; --- TRY X11 SECOND ---
@@ -2597,7 +2650,7 @@ _stub_x86_window:
 
     mov r14, rax             ; r14 = x11_sockfd
 
-    sub rsp, 256
+    sub rsp, 2048
     mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 't'
@@ -2627,7 +2680,6 @@ _stub_x86_window:
     test rax, rax
     js .close_no_display
 
-    ; Send X11 setup request (12 bytes)
     mov dword [rsp], 0x000B006C
     mov dword [rsp + 4], 0
     mov dword [rsp + 8], 0
@@ -2638,7 +2690,6 @@ _stub_x86_window:
     mov rax, 1               ; sys_write
     syscall
 
-    ; Read X11 setup response header (8 bytes)
     mov rdx, 8
     mov rsi, rsp
     mov rdi, r14
@@ -2651,8 +2702,8 @@ _stub_x86_window:
     cmp byte [rsp], 1        ; status == 1 Success
     jne .close_no_display
 
-    movzx r15, word [rsp + 6] ; additional_data_len (4-byte words)
-    shl r15, 2               ; bytes
+    movzx r15, word [rsp + 6]
+    shl r15, 2
 
     mov rdx, r15
     mov rsi, rsp
@@ -2665,29 +2716,28 @@ _stub_x86_window:
 
     movzx ecx, word [rsp + 16] ; vendor_length
     add ecx, 3
-    and ecx, -4              ; pad vendor_length
+    and ecx, -4
     movzx eax, byte [rsp + 21] ; num_formats
-    shl eax, 3               ; num_formats * 8
+    shl eax, 3
     add ecx, eax
     add ecx, 24              ; offset to Screen 0
 
     lea rsi, [rsp + rcx]     ; rsi = &Screen0
     mov r8d, dword [rsi]     ; r8d = root_window_id
-    mov r9d, dword [rsi + 32]; r9d = root_visual_id (at offset 32!)
+    mov r9d, dword [rsi + 32]; r9d = root_visual_id at 32!
 
-    ; Send CreateWindow request (36 bytes = 9 dwords)
-    mov dword [rsp], 0x00090001 ; opcode 1, depth 0, req len 9
-    mov dword [rsp + 4], ebx    ; window_id
-    mov dword [rsp + 8], r8d    ; parent (root_window_id)
-    mov dword [rsp + 12], 0     ; x = 0, y = 0
+    mov dword [rsp], 0x00090001
+    mov dword [rsp + 4], ebx
+    mov dword [rsp + 8], r8d
+    mov dword [rsp + 12], 0
     mov eax, r13d
     shl eax, 16
     or eax, r12d
     mov dword [rsp + 16], eax   ; width | (height << 16)
-    mov dword [rsp + 20], 1     ; border_width = 0, class = 1 InputOutput
-    mov dword [rsp + 24], r9d   ; visual_id
-    mov dword [rsp + 28], 2     ; CWBackPixel = 0x02
-    mov dword [rsp + 32], 0x00FFFFFF ; background pixel = white
+    mov dword [rsp + 20], 1
+    mov dword [rsp + 24], r9d
+    mov dword [rsp + 28], 2
+    mov dword [rsp + 32], 0x00FFFFFF
 
     mov rdx, 36
     mov rsi, rsp
@@ -2695,9 +2745,8 @@ _stub_x86_window:
     mov rax, 1               ; sys_write
     syscall
 
-    ; Send MapWindow request (8 bytes = 2 dwords)
-    mov dword [rsp], 0x00020008 ; opcode 8, req len 2
-    mov dword [rsp + 4], ebx    ; window_id
+    mov dword [rsp], 0x00020008
+    mov dword [rsp + 4], ebx
 
     mov rdx, 8
     mov rsi, rsp
@@ -2705,10 +2754,9 @@ _stub_x86_window:
     mov rax, 1               ; sys_write
     syscall
 
-    ; Check non-blocking reply for X11 Error
     xor r9, r9
     xor r8, r8
-    mov r10, 0x40            ; MSG_DONTWAIT = 0x40
+    mov r10, 0x40
     mov rdx, 32
     mov rsi, rsp
     mov rdi, r14
@@ -2716,12 +2764,60 @@ _stub_x86_window:
     syscall
 
     cmp rax, 1
-    jl .wayland_connected
-    cmp byte [rsp], 0        ; 0 = X11 Error
+    jl .win_do_sleep
+    cmp byte [rsp], 0
     je .close_no_display
+    jmp .win_do_sleep
 
-.wayland_connected:
-    ; Nanosleep 2 seconds
+.wl_handshake:
+    ; Send wl_display.get_registry (Object 1, Opcode 1, new_id = 2)
+    mov dword [rsp], 1       ; Object ID 1 (wl_display)
+    mov dword [rsp + 4], 0x000C0001 ; Req len 12, Opcode 1 (get_registry)
+    mov dword [rsp + 8], 2   ; new_id = 2 (wl_registry)
+
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1               ; sys_write
+    syscall
+
+    ; Send wl_registry.bind for wl_compositor (global 1 -> obj 4)
+    mov dword [rsp], 2       ; Object ID 2 (wl_registry)
+    mov dword [rsp + 4], 0x00200000 ; Req len 32, Opcode 0 (bind)
+    mov dword [rsp + 8], 1   ; name = 1
+    mov dword [rsp + 12], 13 ; str_len = 13
+    mov qword [rsp + 16], 0x6F635F6C77 ; "wl_com"
+    mov dword [rsp + 24], 4  ; version = 4
+    mov dword [rsp + 28], 4  ; new_id = 4 (wl_compositor)
+
+    mov rdx, 32
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1               ; sys_write
+    syscall
+
+    ; Send wl_compositor.create_surface (Object 4, Opcode 0, new_id = 7)
+    mov dword [rsp], 4       ; Object ID 4 (wl_compositor)
+    mov dword [rsp + 4], 0x000C0000 ; Req len 12, Opcode 0 (create_surface)
+    mov dword [rsp + 8], 7   ; new_id = 7 (wl_surface)
+
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1               ; sys_write
+    syscall
+
+    ; Send wl_surface.commit (Object 7, Opcode 6)
+    mov dword [rsp], 7       ; Object ID 7 (wl_surface)
+    mov dword [rsp + 4], 0x00080006 ; Req len 8, Opcode 6 (commit)
+
+    mov rdx, 8
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1               ; sys_write
+    syscall
+
+.win_do_sleep:
     mov qword [rsp], 2       ; tv_sec = 2
     mov qword [rsp + 8], 0   ; tv_nsec = 0
     mov rsi, 0
@@ -2729,12 +2825,11 @@ _stub_x86_window:
     mov rax, 35              ; sys_nanosleep
     syscall
 
-    ; Close socket & return 0
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
 
-    add rsp, 256
+    add rsp, 2048
     xor rax, rax             ; return 0
     mov rdx, 1               ; INT tag = 1
     pop r15
@@ -2749,7 +2844,7 @@ _stub_x86_window:
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
-    add rsp, 256
+    add rsp, 2048
 
 .no_display:
     mov rdi, 2               ; STDERR
@@ -3241,7 +3336,7 @@ _stub_x86_bars:
     syscall
 
     test rax, rax
-    jns .bars_do_sleep
+    jns .bars_wl_handshake
 
     mov rdi, r14
     mov rax, 3               ; sys_close
@@ -3462,6 +3557,18 @@ _stub_x86_bars:
     jl .bars_do_sleep
     cmp byte [rsp], 0
     je .close_no_display
+
+.bars_wl_handshake:
+    ; Send wl_display.get_registry (Object 1, Opcode 1, new_id = 2)
+    mov dword [rsp], 1       ; Object ID 1 (wl_display)
+    mov dword [rsp + 4], 0x000C0001 ; Req len 12, Opcode 1 (get_registry)
+    mov dword [rsp + 8], 2   ; new_id = 2 (wl_registry)
+
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1               ; sys_write
+    syscall
 
 .bars_do_sleep:
     mov qword [rsp], 2
