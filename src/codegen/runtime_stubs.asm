@@ -3210,6 +3210,10 @@ _stub_x86_window:
     mov dword [rsp + 2004], 0
     mov dword [rsp + 2008], 0
     mov dword [rsp + 2012], 64 ; Max message count bound = 64
+    mov dword [rsp + 2024], 0
+    mov dword [rsp + 2028], 0
+    mov dword [rsp + 2032], 0
+    mov dword [rsp + 2036], 0
 
 .wl_read_globals_loop:
     dec dword [rsp + 2012]
@@ -3239,6 +3243,9 @@ _stub_x86_window:
     mov r15d, ecx
     shr r15d, 16             ; total msg length
     and ecx, 0xFFFF          ; opcode
+    inc dword [rsp + 2024]
+    mov dword [rsp + 2028], ebx
+    mov dword [rsp + 2032], ecx
 
     sub r15d, 8
     js .wl_globals_done
@@ -3263,6 +3270,7 @@ _stub_x86_window:
 
     mov eax, dword [rsp]     ; global name
     mov r8d, dword [rsp + 4] ; interface string length
+    mov dword [rsp + 2036], r8d
     lea r9, [rsp + 8]        ; interface string pointer
 
     ; wl_compositor len is 14
@@ -3320,6 +3328,150 @@ _stub_x86_window:
     jmp .wl_bind_globals
 
 .err_missing_global:
+    lea rbx, [rsp + 2100]
+    mov byte [rbx], 'w'
+    mov byte [rbx + 1], 'a'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 'l'
+    mov byte [rbx + 4], 'a'
+    mov byte [rbx + 5], 'n'
+    mov byte [rbx + 6], 'd'
+    mov byte [rbx + 7], ':'
+    mov byte [rbx + 8], ' '
+    mov byte [rbx + 9], 's'
+    mov byte [rbx + 10], 'a'
+    mov byte [rbx + 11], 'w'
+    mov byte [rbx + 12], ' '
+    add rbx, 13
+
+    ; 1. Format count
+    mov r8d, dword [rsp + 2024]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_c_loop:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_c_loop
+.rev_c_loop:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_c_loop
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'o'
+    mov byte [rbx + 2], 'b'
+    mov byte [rbx + 3], 'j'
+    mov byte [rbx + 4], '='
+    add rbx, 5
+
+    ; 2. Format obj
+    mov r8d, dword [rsp + 2028]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_o_loop:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_o_loop
+.rev_o_loop:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_o_loop
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'o'
+    mov byte [rbx + 2], 'p'
+    mov byte [rbx + 3], '='
+    add rbx, 4
+
+    ; 3. Format op
+    mov r8d, dword [rsp + 2032]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_op_loop:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_op_loop
+.rev_op_loop:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_op_loop
+
+    cmp dword [rsp + 2028], 2
+    jne .saw_done
+    cmp dword [rsp + 2032], 0
+    jne .saw_done
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'l'
+    mov byte [rbx + 2], 'e'
+    mov byte [rbx + 3], 'n'
+    mov byte [rbx + 4], '='
+    add rbx, 5
+
+    ; 4. Format len
+    mov r8d, dword [rsp + 2036]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_l_loop:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_l_loop
+.rev_l_loop:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_l_loop
+
+.saw_done:
+    mov byte [rbx], 10
+    inc rbx
+
+    lea rsi, [rsp + 2100]
+    mov rdx, rbx
+    sub rdx, rsi
+    mov rdi, 2
+    mov rax, 1
+    syscall
+
     mov rdi, 2
     lea rsi, [rel .msg_missing_global]
     mov rdx, 23
@@ -4825,6 +4977,10 @@ _stub_x86_bars:
     mov dword [rsp + 2004], 0
     mov dword [rsp + 2008], 0
     mov dword [rsp + 2012], 64 ; Max message count bound = 64
+    mov dword [rsp + 2024], 0
+    mov dword [rsp + 2028], 0
+    mov dword [rsp + 2032], 0
+    mov dword [rsp + 2036], 0
 
 .wl_read_globals_loop:
     dec dword [rsp + 2012]
@@ -4854,6 +5010,9 @@ _stub_x86_bars:
     mov r15d, ecx
     shr r15d, 16             ; total msg length
     and ecx, 0xFFFF          ; opcode
+    inc dword [rsp + 2024]
+    mov dword [rsp + 2028], ebx
+    mov dword [rsp + 2032], ecx
 
     sub r15d, 8
     js .wl_globals_done
@@ -4878,6 +5037,7 @@ _stub_x86_bars:
 
     mov eax, dword [rsp]     ; global name
     mov r8d, dword [rsp + 4] ; interface string length
+    mov dword [rsp + 2036], r8d
     lea r9, [rsp + 8]        ; interface string pointer
 
     ; wl_compositor len is 14
@@ -4935,6 +5095,150 @@ _stub_x86_bars:
     jmp .wl_bind_globals_bars
 
 .err_missing_global_bars:
+    lea rbx, [rsp + 2100]
+    mov byte [rbx], 'w'
+    mov byte [rbx + 1], 'a'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 'l'
+    mov byte [rbx + 4], 'a'
+    mov byte [rbx + 5], 'n'
+    mov byte [rbx + 6], 'd'
+    mov byte [rbx + 7], ':'
+    mov byte [rbx + 8], ' '
+    mov byte [rbx + 9], 's'
+    mov byte [rbx + 10], 'a'
+    mov byte [rbx + 11], 'w'
+    mov byte [rbx + 12], ' '
+    add rbx, 13
+
+    ; 1. Format count
+    mov r8d, dword [rsp + 2024]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_c_loop_bars:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_c_loop_bars
+.rev_c_loop_bars:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_c_loop_bars
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'o'
+    mov byte [rbx + 2], 'b'
+    mov byte [rbx + 3], 'j'
+    mov byte [rbx + 4], '='
+    add rbx, 5
+
+    ; 2. Format obj
+    mov r8d, dword [rsp + 2028]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_o_loop_bars:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_o_loop_bars
+.rev_o_loop_bars:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_o_loop_bars
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'o'
+    mov byte [rbx + 2], 'p'
+    mov byte [rbx + 3], '='
+    add rbx, 4
+
+    ; 3. Format op
+    mov r8d, dword [rsp + 2032]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_op_loop_bars:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_op_loop_bars
+.rev_op_loop_bars:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_op_loop_bars
+
+    cmp dword [rsp + 2028], 2
+    jne .saw_done_bars
+    cmp dword [rsp + 2032], 0
+    jne .saw_done_bars
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'l'
+    mov byte [rbx + 2], 'e'
+    mov byte [rbx + 3], 'n'
+    mov byte [rbx + 4], '='
+    add rbx, 5
+
+    ; 4. Format len
+    mov r8d, dword [rsp + 2036]
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_l_loop_bars:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_l_loop_bars
+.rev_l_loop_bars:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_l_loop_bars
+
+.saw_done_bars:
+    mov byte [rbx], 10
+    inc rbx
+
+    lea rsi, [rsp + 2100]
+    mov rdx, rbx
+    sub rdx, rsi
+    mov rdi, 2
+    mov rax, 1
+    syscall
+
     mov rdi, 2
     lea rsi, [rel .msg_missing_global_bars]
     mov rdx, 23
