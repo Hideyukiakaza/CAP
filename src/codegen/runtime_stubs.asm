@@ -3268,11 +3268,11 @@ _stub_x86_window:
     ; wl_compositor len is 14
     cmp r8d, 14
     jne .chk_shm
-    cmp dword [r9], 0x5F636C77 ; "wl_c"
+    cmp dword [r9], 0x635F6C77 ; "wl_c"
     jne .chk_shm
     cmp dword [r9 + 4], 0x6F706D6F ; "ompo"
     jne .chk_shm
-    cmp dword [r9 + 8], 0x746F6973 ; "sito"
+    cmp dword [r9 + 8], 0x6F746973 ; "sito"
     jne .chk_shm
     cmp word [r9 + 12], 0x0072     ; r_nul
     jne .chk_shm
@@ -3351,9 +3351,9 @@ _stub_x86_window:
     mov eax, dword [rsp + 2000]
     mov dword [rsp + 8], eax ; global name
     mov dword [rsp + 12], 14 ; str len 14
-    mov dword [rsp + 16], 0x5F636C77 ; "wl_c"
+    mov dword [rsp + 16], 0x635F6C77 ; "wl_c"
     mov dword [rsp + 20], 0x6F706D6F ; "ompo"
-    mov dword [rsp + 24], 0x746F6973 ; "sito"
+    mov dword [rsp + 24], 0x6F746973 ; "sito"
     mov dword [rsp + 28], 0x00000072 ; "r"
     mov dword [rsp + 32], 1  ; version 1
     mov dword [rsp + 36], 4  ; new_id = 4 (wl_compositor)
@@ -4883,11 +4883,11 @@ _stub_x86_bars:
     ; wl_compositor len is 14
     cmp r8d, 14
     jne .chk_shm
-    cmp dword [r9], 0x5F636C77 ; "wl_c"
+    cmp dword [r9], 0x635F6C77 ; "wl_c"
     jne .chk_shm
     cmp dword [r9 + 4], 0x6F706D6F ; "ompo"
     jne .chk_shm
-    cmp dword [r9 + 8], 0x746F6973 ; "sito"
+    cmp dword [r9 + 8], 0x6F746973 ; "sito"
     jne .chk_shm
     cmp word [r9 + 12], 0x0072     ; r_nul
     jne .chk_shm
@@ -4966,9 +4966,9 @@ _stub_x86_bars:
     mov eax, dword [rsp + 2000]
     mov dword [rsp + 8], eax ; global name
     mov dword [rsp + 12], 14 ; str len 14
-    mov dword [rsp + 16], 0x5F636C77 ; "wl_c"
+    mov dword [rsp + 16], 0x635F6C77 ; "wl_c"
     mov dword [rsp + 20], 0x6F706D6F ; "ompo"
-    mov dword [rsp + 24], 0x746F6973 ; "sito"
+    mov dword [rsp + 24], 0x6F746973 ; "sito"
     mov dword [rsp + 28], 0x00000072 ; "r"
     mov dword [rsp + 32], 1  ; version 1
     mov dword [rsp + 36], 4  ; new_id = 4 (wl_compositor)
