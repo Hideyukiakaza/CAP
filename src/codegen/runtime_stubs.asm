@@ -2976,8 +2976,8 @@ _stub_x86_window:
     push r14
     push r15
 
-    mov r12, rdi             ; width / list_ptr
-    mov r13, rsi             ; height / list_len
+    mov r12, rdi             ; width
+    mov r13, rsi             ; height
 
     ; --- TRY WAYLAND FIRST ---
     mov rax, 102             ; sys_getuid
@@ -2995,8 +2995,7 @@ _stub_x86_window:
 
     mov r14, rax             ; r14 = wayland_sockfd
 
-    sub rsp, 4096
-    mov word [rsp], 1        ; AF_UNIX = 1
+        mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 'r'
     mov byte [rsp + 4], 'u'
@@ -3076,8 +3075,7 @@ _stub_x86_window:
 
     mov r14, rax             ; r14 = x11_sockfd
 
-    sub rsp, 4096
-    mov word [rsp], 1        ; AF_UNIX = 1
+        mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 't'
     mov byte [rsp + 4], 'm'
@@ -3206,9 +3204,9 @@ _stub_x86_window:
     mov rax, 1               ; sys_write
     syscall
 
-    mov dword [rsp + 2000], 0
-    mov dword [rsp + 2004], 0
-    mov dword [rsp + 2008], 0
+    xor r12d, r12d
+    xor r13d, r13d
+    xor r15d, r15d
     mov dword [rsp + 2012], 64 ; Max message count bound = 64
     mov dword [rsp + 2024], 0
     mov dword [rsp + 2028], 0
@@ -3243,24 +3241,24 @@ _stub_x86_window:
 
     mov ebx, dword [rsp]     ; sender obj id
     mov ecx, dword [rsp + 4] ; (len << 16) | opcode
-    mov r15d, ecx
-    shr r15d, 16             ; total msg length
+    mov r10d, ecx
+    shr r10d, 16             ; total msg length
     and ecx, 0xFFFF          ; opcode
     inc dword [rsp + 2024]
     mov dword [rsp + 2028], ebx
     mov dword [rsp + 2032], ecx
 
-    sub r15d, 8
+    sub r10d, 8
     js .wl_globals_done
-    mov rdx, r15
+    mov rdx, r10
     lea rsi, [rsp + 512]
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
-    cmp rax, r15
+    cmp rax, r10
     jl .wl_globals_done
 
-    mov eax, r15d
+    mov eax, r10d
     add eax, 8
     mov dword [rsp + 2040], eax
     mov rax, qword [rsp + 512]
@@ -3384,7 +3382,7 @@ _stub_x86_window:
     jne .chk_shm
     cmp word [r9 + 12], 0x0072     ; r_nul
     jne .chk_shm
-    mov dword [rsp + 2000], eax ; compositor_id = name
+    mov r12d, eax               ; compositor_id = name
     jmp .check_globals_done
 
 .chk_shm:
@@ -3395,7 +3393,7 @@ _stub_x86_window:
     jne .chk_xdg
     cmp dword [r9 + 3], 0x006D6873 ; shm_nul
     jne .chk_xdg
-    mov dword [rsp + 2004], eax ; shm_id = name
+    mov r13d, eax               ; shm_id = name
     jmp .check_globals_done
 
 .chk_xdg:
@@ -3408,23 +3406,23 @@ _stub_x86_window:
     jne .check_globals_done
     cmp dword [r9 + 8], 0x00657361 ; ase_nul
     jne .check_globals_done
-    mov dword [rsp + 2008], eax ; xdg_wm_base_id = name
+    mov r15d, eax               ; xdg_wm_base_id = name
 
 .check_globals_done:
-    cmp dword [rsp + 2000], 0
-    je .wl_read_globals_loop
-    cmp dword [rsp + 2004], 0
-    je .wl_read_globals_loop
-    cmp dword [rsp + 2008], 0
-    je .wl_read_globals_loop
+    test r12d, r12d
+    jz .wl_read_globals_loop
+    test r13d, r13d
+    jz .wl_read_globals_loop
+    test r15d, r15d
+    jz .wl_read_globals_loop
 
 .wl_globals_done:
-    cmp dword [rsp + 2000], 0
-    je .err_missing_global
-    cmp dword [rsp + 2004], 0
-    je .err_missing_global
-    cmp dword [rsp + 2008], 0
-    je .err_missing_global
+    test r12d, r12d
+    jz .err_missing_global
+    test r13d, r13d
+    jz .err_missing_global
+    test r15d, r15d
+    jz .err_missing_global
     jmp .wl_bind_globals
 
 .err_missing_global:
@@ -3686,8 +3684,7 @@ _stub_x86_window:
     ; 1) bind wl_compositor (obj 4) - str len 14, padded to 16
     mov dword [rsp], 2       ; obj 2
     mov dword [rsp + 4], 0x00280000 ; len 40, opcode 0
-    mov eax, dword [rsp + 2000]
-    mov dword [rsp + 8], eax ; global name
+    mov dword [rsp + 8], r12d; global name
     mov dword [rsp + 12], 14 ; str len 14
     mov dword [rsp + 16], 0x635F6C77 ; "wl_c"
     mov dword [rsp + 20], 0x6F706D6F ; "ompo"
@@ -3704,8 +3701,7 @@ _stub_x86_window:
     ; 2) bind wl_shm (obj 5) - str len 7, padded to 8
     mov dword [rsp], 2       ; obj 2
     mov dword [rsp + 4], 0x00200000 ; len 32, opcode 0
-    mov eax, dword [rsp + 2004]
-    mov dword [rsp + 8], eax ; global name
+    mov dword [rsp + 8], r13d; global name
     mov dword [rsp + 12], 7  ; str len 7
     mov dword [rsp + 16], 0x735F6C77 ; "wl_s"
     mov dword [rsp + 20], 0x00006D68 ; "hm"
@@ -3720,8 +3716,7 @@ _stub_x86_window:
     ; 3) bind xdg_wm_base (obj 6) - str len 12, padded to 12
     mov dword [rsp], 2       ; obj 2
     mov dword [rsp + 4], 0x00240000 ; len 36, opcode 0
-    mov eax, dword [rsp + 2008]
-    mov dword [rsp + 8], eax ; global name
+    mov dword [rsp + 8], r15d ; global name
     mov dword [rsp + 12], 12 ; str len 12
     mov dword [rsp + 16], 0x5F676478 ; "xdg_"
     mov dword [rsp + 20], 0x625F6D77 ; "wm_b"
@@ -3929,18 +3924,18 @@ _stub_x86_window:
 
     mov ebx, dword [rsp]     ; sender obj id
     mov ecx, dword [rsp + 4] ; (len << 16) | opcode
-    mov r15d, ecx
-    shr r15d, 16             ; total msg length
+    mov r10d, ecx
+    shr r10d, 16             ; total msg length
     and ecx, 0xFFFF          ; opcode
 
-    sub r15d, 8
+    sub r10d, 8
     js .err_no_configure
-    mov rdx, r15
+    mov rdx, r10
     mov rsi, rsp
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
-    cmp rax, r15
+    cmp rax, r10
     jl .err_no_configure
 
     cmp ebx, 1
@@ -4928,9 +4923,12 @@ _stub_x86_bars:
     push r13
     push r14
     push r15
+    sub rsp, 4096
 
-    mov r12, rdi             ; width / list_ptr
-    mov r13, rsi             ; height / list_len
+    mov qword [rsp + 2064], rdi ; save list_ptr
+    mov qword [rsp + 2072], rsi ; save list_len
+    mov r12, rdi             ; list_ptr
+    mov r13, rsi             ; list_len
 
     ; --- TRY WAYLAND FIRST ---
     mov rax, 102             ; sys_getuid
@@ -4948,8 +4946,7 @@ _stub_x86_bars:
 
     mov r14, rax             ; r14 = wayland_sockfd
 
-    sub rsp, 4096
-    mov word [rsp], 1        ; AF_UNIX = 1
+        mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 'r'
     mov byte [rsp + 4], 'u'
@@ -5017,6 +5014,8 @@ _stub_x86_bars:
     add rsp, 4096
 
 .try_x11:
+    mov r12, qword [rsp + 2064]
+    mov r13, qword [rsp + 2072]
     ; --- TRY X11 SECOND ---
     mov rdx, 0
     mov rsi, 1
@@ -5029,8 +5028,7 @@ _stub_x86_bars:
 
     mov r14, rax             ; r14 = x11_sockfd
 
-    sub rsp, 4096
-    mov word [rsp], 1        ; AF_UNIX = 1
+        mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 't'
     mov byte [rsp + 4], 'm'
@@ -5159,10 +5157,10 @@ _stub_x86_bars:
     mov rax, 1               ; sys_write
     syscall
 
-    mov dword [rsp + 2000], 0
-    mov dword [rsp + 2004], 0
-    mov dword [rsp + 2008], 0
-    mov dword [rsp + 2012], 64 ; Max message count bound = 64
+    xor r12d, r12d
+    xor r13d, r13d
+    xor r15d, r15d
+        mov dword [rsp + 2012], 64 ; Max message count bound = 64
     mov dword [rsp + 2024], 0
     mov dword [rsp + 2028], 0
     mov dword [rsp + 2032], 0
@@ -5196,24 +5194,24 @@ _stub_x86_bars:
 
     mov ebx, dword [rsp]     ; sender obj id
     mov ecx, dword [rsp + 4] ; (len << 16) | opcode
-    mov r15d, ecx
-    shr r15d, 16             ; total msg length
+    mov r10d, ecx
+    shr r10d, 16             ; total msg length
     and ecx, 0xFFFF          ; opcode
     inc dword [rsp + 2024]
     mov dword [rsp + 2028], ebx
     mov dword [rsp + 2032], ecx
 
-    sub r15d, 8
+    sub r10d, 8
     js .wl_globals_done
-    mov rdx, r15
+    mov rdx, r10
     lea rsi, [rsp + 512]
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
-    cmp rax, r15
+    cmp rax, r10
     jl .wl_globals_done
 
-    mov eax, r15d
+    mov eax, r10d
     add eax, 8
     mov dword [rsp + 2040], eax
     mov rax, qword [rsp + 512]
@@ -5337,7 +5335,7 @@ _stub_x86_bars:
     jne .chk_shm
     cmp word [r9 + 12], 0x0072     ; r_nul
     jne .chk_shm
-    mov dword [rsp + 2000], eax ; compositor_id = name
+    mov r12d, eax               ; compositor_id = name
     jmp .check_globals_done
 
 .chk_shm:
@@ -5348,7 +5346,7 @@ _stub_x86_bars:
     jne .chk_xdg
     cmp dword [r9 + 3], 0x006D6873 ; shm_nul
     jne .chk_xdg
-    mov dword [rsp + 2004], eax ; shm_id = name
+    mov r13d, eax               ; shm_id = name
     jmp .check_globals_done
 
 .chk_xdg:
@@ -5361,23 +5359,23 @@ _stub_x86_bars:
     jne .check_globals_done
     cmp dword [r9 + 8], 0x00657361 ; ase_nul
     jne .check_globals_done
-    mov dword [rsp + 2008], eax ; xdg_wm_base_id = name
+    mov r15d, eax               ; xdg_wm_base_id = name
 
 .check_globals_done:
-    cmp dword [rsp + 2000], 0
-    je .wl_read_globals_loop
-    cmp dword [rsp + 2004], 0
-    je .wl_read_globals_loop
-    cmp dword [rsp + 2008], 0
-    je .wl_read_globals_loop
+    test r12d, r12d
+    jz .wl_read_globals_loop
+    test r13d, r13d
+    jz .wl_read_globals_loop
+    test r15d, r15d
+    jz .wl_read_globals_loop
 
 .wl_globals_done:
-    cmp dword [rsp + 2000], 0
-    je .err_missing_global_bars
-    cmp dword [rsp + 2004], 0
-    je .err_missing_global_bars
-    cmp dword [rsp + 2008], 0
-    je .err_missing_global_bars
+    test r12d, r12d
+    jz .err_missing_global_bars
+    test r13d, r13d
+    jz .err_missing_global_bars
+    test r15d, r15d
+    jz .err_missing_global_bars
     jmp .wl_bind_globals_bars
 
 .err_missing_global_bars:
@@ -5639,8 +5637,7 @@ _stub_x86_bars:
     ; 1) bind wl_compositor (obj 4) - str len 14, padded to 16
     mov dword [rsp], 2       ; obj 2
     mov dword [rsp + 4], 0x00280000 ; len 40, opcode 0
-    mov eax, dword [rsp + 2000]
-    mov dword [rsp + 8], eax ; global name
+    mov dword [rsp + 8], r12d; global name
     mov dword [rsp + 12], 14 ; str len 14
     mov dword [rsp + 16], 0x635F6C77 ; "wl_c"
     mov dword [rsp + 20], 0x6F706D6F ; "ompo"
@@ -5657,8 +5654,7 @@ _stub_x86_bars:
     ; 2) bind wl_shm (obj 5) - str len 7, padded to 8
     mov dword [rsp], 2       ; obj 2
     mov dword [rsp + 4], 0x00200000 ; len 32, opcode 0
-    mov eax, dword [rsp + 2004]
-    mov dword [rsp + 8], eax ; global name
+    mov dword [rsp + 8], r13d; global name
     mov dword [rsp + 12], 7  ; str len 7
     mov dword [rsp + 16], 0x735F6C77 ; "wl_s"
     mov dword [rsp + 20], 0x00006D68 ; "hm"
@@ -5673,8 +5669,7 @@ _stub_x86_bars:
     ; 3) bind xdg_wm_base (obj 6) - str len 12, padded to 12
     mov dword [rsp], 2       ; obj 2
     mov dword [rsp + 4], 0x00240000 ; len 36, opcode 0
-    mov eax, dword [rsp + 2008]
-    mov dword [rsp + 8], eax ; global name
+    mov dword [rsp + 8], r15d ; global name
     mov dword [rsp + 12], 12 ; str len 12
     mov dword [rsp + 16], 0x5F676478 ; "xdg_"
     mov dword [rsp + 20], 0x625F6D77 ; "wm_b"
@@ -5761,6 +5756,8 @@ _stub_x86_bars:
     js .try_x11
 
 .got_shm_fd:
+    mov r12, qword [rsp + 2064]
+    mov r13, qword [rsp + 2072]
     mov r15, rax             ; r15 = shm_fd
 
     mov rsi, 320000
