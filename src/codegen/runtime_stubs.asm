@@ -3076,7 +3076,7 @@ _stub_x86_window:
 
     mov r14, rax             ; r14 = x11_sockfd
 
-    sub rsp, 2048
+    sub rsp, 4096
     mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 't'
@@ -3253,7 +3253,7 @@ _stub_x86_window:
     sub r15d, 8
     js .wl_globals_done
     mov rdx, r15
-    mov rsi, rsp
+    lea rsi, [rsp + 512]
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
@@ -3263,9 +3263,9 @@ _stub_x86_window:
     mov eax, r15d
     add eax, 8
     mov dword [rsp + 2040], eax
-    mov rax, qword [rsp]
+    mov rax, qword [rsp + 512]
     mov qword [rsp + 2048], rax
-    mov rax, qword [rsp + 8]
+    mov rax, qword [rsp + 520]
     mov qword [rsp + 2056], rax
 
     cmp ebx, 1
@@ -3279,10 +3279,99 @@ _stub_x86_window:
     cmp ecx, 0
     jne .check_globals_done
 
-    mov eax, dword [rsp]     ; global name
-    mov r8d, dword [rsp + 4] ; interface string length
+    mov eax, dword [rsp + 512] ; global name
+    mov r8d, dword [rsp + 516] ; interface string length
     mov dword [rsp + 2036], r8d
-    lea r9, [rsp + 8]        ; interface string pointer
+    lea r9, [rsp + 520]        ; interface string pointer
+
+    ; Print "wayland: global <length> <string>\n"
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+
+    lea rbx, [rsp + 2100 + 64]
+    mov byte [rbx], 'w'
+    mov byte [rbx + 1], 'a'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 'l'
+    mov byte [rbx + 4], 'a'
+    mov byte [rbx + 5], 'n'
+    mov byte [rbx + 6], 'd'
+    mov byte [rbx + 7], ':'
+    mov byte [rbx + 8], ' '
+    mov byte [rbx + 9], 'g'
+    mov byte [rbx + 10], 'l'
+    mov byte [rbx + 11], 'o'
+    mov byte [rbx + 12], 'b'
+    mov byte [rbx + 13], 'a'
+    mov byte [rbx + 14], 'l'
+    mov byte [rbx + 15], ' '
+    add rbx, 16
+
+    mov r8d, dword [rsp + 516 + 64]
+    lea r9, [rsp + 2150 + 64]
+    xor rcx, rcx
+.fmt_glen_loop:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_glen_loop
+.rev_glen_loop:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_glen_loop
+
+    mov byte [rbx], ' '
+    inc rbx
+
+    mov r8d, dword [rsp + 516 + 64]
+    test r8d, r8d
+    jle .gstr_copied
+    lea rsi, [rsp + 520 + 64]
+    xor rcx, rcx
+.copy_gstr_loop:
+    mov al, byte [rsi + rcx]
+    test al, al
+    jz .gstr_copied
+    mov byte [rbx], al
+    inc rbx
+    inc rcx
+    cmp ecx, r8d
+    jl .copy_gstr_loop
+
+.gstr_copied:
+    mov byte [rbx], 10
+    inc rbx
+
+    lea rsi, [rsp + 2100 + 64]
+    mov rdx, rbx
+    sub rdx, rsi
+    mov rdi, 2
+    mov rax, 1
+    syscall
+
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
 
     ; wl_compositor len is 14
     cmp r8d, 14
@@ -4940,7 +5029,7 @@ _stub_x86_bars:
 
     mov r14, rax             ; r14 = x11_sockfd
 
-    sub rsp, 2048
+    sub rsp, 4096
     mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 't'
@@ -5117,7 +5206,7 @@ _stub_x86_bars:
     sub r15d, 8
     js .wl_globals_done
     mov rdx, r15
-    mov rsi, rsp
+    lea rsi, [rsp + 512]
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
@@ -5127,9 +5216,9 @@ _stub_x86_bars:
     mov eax, r15d
     add eax, 8
     mov dword [rsp + 2040], eax
-    mov rax, qword [rsp]
+    mov rax, qword [rsp + 512]
     mov qword [rsp + 2048], rax
-    mov rax, qword [rsp + 8]
+    mov rax, qword [rsp + 520]
     mov qword [rsp + 2056], rax
 
     cmp ebx, 1
@@ -5143,10 +5232,99 @@ _stub_x86_bars:
     cmp ecx, 0
     jne .check_globals_done
 
-    mov eax, dword [rsp]     ; global name
-    mov r8d, dword [rsp + 4] ; interface string length
+    mov eax, dword [rsp + 512] ; global name
+    mov r8d, dword [rsp + 516] ; interface string length
     mov dword [rsp + 2036], r8d
-    lea r9, [rsp + 8]        ; interface string pointer
+    lea r9, [rsp + 520]        ; interface string pointer
+
+    ; Print "wayland: global <length> <string>\n"
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+
+    lea rbx, [rsp + 2100 + 64]
+    mov byte [rbx], 'w'
+    mov byte [rbx + 1], 'a'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 'l'
+    mov byte [rbx + 4], 'a'
+    mov byte [rbx + 5], 'n'
+    mov byte [rbx + 6], 'd'
+    mov byte [rbx + 7], ':'
+    mov byte [rbx + 8], ' '
+    mov byte [rbx + 9], 'g'
+    mov byte [rbx + 10], 'l'
+    mov byte [rbx + 11], 'o'
+    mov byte [rbx + 12], 'b'
+    mov byte [rbx + 13], 'a'
+    mov byte [rbx + 14], 'l'
+    mov byte [rbx + 15], ' '
+    add rbx, 16
+
+    mov r8d, dword [rsp + 516 + 64]
+    lea r9, [rsp + 2150 + 64]
+    xor rcx, rcx
+.fmt_glen_loop_bars:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_glen_loop_bars
+.rev_glen_loop_bars:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_glen_loop_bars
+
+    mov byte [rbx], ' '
+    inc rbx
+
+    mov r8d, dword [rsp + 516 + 64]
+    test r8d, r8d
+    jle .gstr_copied_bars
+    lea rsi, [rsp + 520 + 64]
+    xor rcx, rcx
+.copy_gstr_loop_bars:
+    mov al, byte [rsi + rcx]
+    test al, al
+    jz .gstr_copied_bars
+    mov byte [rbx], al
+    inc rbx
+    inc rcx
+    cmp ecx, r8d
+    jl .copy_gstr_loop_bars
+
+.gstr_copied_bars:
+    mov byte [rbx], 10
+    inc rbx
+
+    lea rsi, [rsp + 2100 + 64]
+    mov rdx, rbx
+    sub rdx, rsi
+    mov rdi, 2
+    mov rax, 1
+    syscall
+
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
 
     ; wl_compositor len is 14
     cmp r8d, 14
