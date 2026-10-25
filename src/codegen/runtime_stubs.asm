@@ -3220,7 +3220,7 @@ _stub_x86_window:
     mov word [rsp + 2022], 0
     lea rdi, [rsp + 2016]
     mov rsi, 1
-    mov rdx, 200
+    mov rdx, 1000
     mov rax, 7               ; sys_poll
     syscall
     cmp rax, 0
@@ -3250,6 +3250,12 @@ _stub_x86_window:
     cmp rax, r15
     jl .wl_globals_done
 
+    cmp ebx, 1
+    jne .chk_reg_evt
+    cmp ecx, 0
+    je .err_display_error
+
+.chk_reg_evt:
     cmp ebx, 2
     jne .check_globals_done
     cmp ecx, 0
@@ -3306,12 +3312,38 @@ _stub_x86_window:
 
 .wl_globals_done:
     cmp dword [rsp + 2000], 0
-    je .win_do_sleep
+    je .err_missing_global
     cmp dword [rsp + 2004], 0
-    je .win_do_sleep
+    je .err_missing_global
     cmp dword [rsp + 2008], 0
-    je .win_do_sleep
+    je .err_missing_global
+    jmp .wl_bind_globals
 
+.err_missing_global:
+    mov rdi, 2
+    lea rsi, [rel .msg_missing_global]
+    mov rdx, 23
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_display_error:
+    mov rdi, 2
+    lea rsi, [rel .msg_display_error]
+    mov rdx, 22
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_no_configure:
+    mov rdi, 2
+    lea rsi, [rel .msg_no_configure]
+    mov rdx, 21
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.wl_bind_globals:
     ; STEP 2: Send BIND requests
     ; 1) bind wl_compositor (obj 4) - str len 14, padded to 16
     mov dword [rsp], 2       ; obj 2
@@ -3388,6 +3420,17 @@ _stub_x86_window:
     mov dword [rsp + 4], 0x000C0001 ; len 12, opcode 1
     mov dword [rsp + 8], 9          ; new_id = 9 (xdg_toplevel)
     mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; set_app_id on object 9 (opcode 3, "cap\0")
+    mov dword [rsp], 9
+    mov dword [rsp + 4], 0x00100003 ; len 16, opcode 3
+    mov dword [rsp + 8], 4          ; str len 4 (including NUL)
+    mov dword [rsp + 12], 0x00706163; "cap\0"
+    mov rdx, 16
     mov rsi, rsp
     mov rdi, r14
     mov rax, 1
@@ -3525,18 +3568,18 @@ _stub_x86_window:
 
 .wl_event_loop:
     dec dword [rsp + 2012]
-    jz .win_do_sleep
+    jz .err_no_configure
 
     mov dword [rsp + 2016], r14d
     mov word [rsp + 2020], 1
     mov word [rsp + 2022], 0
     lea rdi, [rsp + 2016]
     mov rsi, 1
-    mov rdx, 200
+    mov rdx, 1000
     mov rax, 7               ; sys_poll
     syscall
     cmp rax, 0
-    jle .win_do_sleep
+    jle .err_no_configure
 
     mov rdx, 8
     mov rsi, rsp
@@ -3544,7 +3587,7 @@ _stub_x86_window:
     mov rax, 0               ; sys_read
     syscall
     cmp rax, 8
-    jl .win_do_sleep
+    jl .err_no_configure
 
     mov ebx, dword [rsp]     ; sender obj id
     mov ecx, dword [rsp + 4] ; (len << 16) | opcode
@@ -3553,15 +3596,21 @@ _stub_x86_window:
     and ecx, 0xFFFF          ; opcode
 
     sub r15d, 8
-    js .win_do_sleep
+    js .err_no_configure
     mov rdx, r15
     mov rsi, rsp
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
     cmp rax, r15
-    jl .win_do_sleep
+    jl .err_no_configure
 
+    cmp ebx, 1
+    jne .chk_wm_base_ping
+    cmp ecx, 0
+    je .err_display_error
+
+.chk_wm_base_ping:
     cmp ebx, 6
     jne .chk_xdg_surf_evt
     cmp ecx, 0
@@ -3644,6 +3693,9 @@ _stub_x86_window:
     mov rax, 60              ; sys_exit
     syscall
 .no_display_msg: db "RuntimeError: cannot open display", 10
+.msg_missing_global: db "wayland: missing global", 10
+.msg_display_error: db "wayland: display error", 10
+.msg_no_configure: db "wayland: no configure", 10
 _stub_x86_window_end:
 
 
@@ -4783,7 +4835,7 @@ _stub_x86_bars:
     mov word [rsp + 2022], 0
     lea rdi, [rsp + 2016]
     mov rsi, 1
-    mov rdx, 200
+    mov rdx, 1000
     mov rax, 7               ; sys_poll
     syscall
     cmp rax, 0
@@ -4813,6 +4865,12 @@ _stub_x86_bars:
     cmp rax, r15
     jl .wl_globals_done
 
+    cmp ebx, 1
+    jne .chk_reg_evt_bars
+    cmp ecx, 0
+    je .err_display_error_bars
+
+.chk_reg_evt_bars:
     cmp ebx, 2
     jne .check_globals_done
     cmp ecx, 0
@@ -4869,12 +4927,38 @@ _stub_x86_bars:
 
 .wl_globals_done:
     cmp dword [rsp + 2000], 0
-    je .win_do_sleep
+    je .err_missing_global_bars
     cmp dword [rsp + 2004], 0
-    je .win_do_sleep
+    je .err_missing_global_bars
     cmp dword [rsp + 2008], 0
-    je .win_do_sleep
+    je .err_missing_global_bars
+    jmp .wl_bind_globals_bars
 
+.err_missing_global_bars:
+    mov rdi, 2
+    lea rsi, [rel .msg_missing_global_bars]
+    mov rdx, 23
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_display_error_bars:
+    mov rdi, 2
+    lea rsi, [rel .msg_display_error_bars]
+    mov rdx, 22
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_no_configure_bars:
+    mov rdi, 2
+    lea rsi, [rel .msg_no_configure_bars]
+    mov rdx, 21
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.wl_bind_globals_bars:
     ; STEP 2: Send BIND requests
     ; 1) bind wl_compositor (obj 4) - str len 14, padded to 16
     mov dword [rsp], 2       ; obj 2
@@ -4951,6 +5035,17 @@ _stub_x86_bars:
     mov dword [rsp + 4], 0x000C0001 ; len 12, opcode 1
     mov dword [rsp + 8], 9          ; new_id = 9 (xdg_toplevel)
     mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; set_app_id on object 9 (opcode 3, "cap\0")
+    mov dword [rsp], 9
+    mov dword [rsp + 4], 0x00100003 ; len 16, opcode 3
+    mov dword [rsp + 8], 4          ; str len 4 (including NUL)
+    mov dword [rsp + 12], 0x00706163; "cap\0"
+    mov rdx, 16
     mov rsi, rsp
     mov rdi, r14
     mov rax, 1
@@ -5182,18 +5277,18 @@ _stub_x86_bars:
 
 .wl_event_loop:
     dec dword [rsp + 2012]
-    jz .win_do_sleep
+    jz .err_no_configure_bars
 
     mov dword [rsp + 2016], r14d
     mov word [rsp + 2020], 1
     mov word [rsp + 2022], 0
     lea rdi, [rsp + 2016]
     mov rsi, 1
-    mov rdx, 200
+    mov rdx, 1000
     mov rax, 7               ; sys_poll
     syscall
     cmp rax, 0
-    jle .win_do_sleep
+    jle .err_no_configure_bars
 
     mov rdx, 8
     mov rsi, rsp
@@ -5201,7 +5296,7 @@ _stub_x86_bars:
     mov rax, 0               ; sys_read
     syscall
     cmp rax, 8
-    jl .win_do_sleep
+    jl .err_no_configure_bars
 
     mov ebx, dword [rsp]     ; sender obj id
     mov ecx, dword [rsp + 4] ; (len << 16) | opcode
@@ -5210,15 +5305,21 @@ _stub_x86_bars:
     and ecx, 0xFFFF          ; opcode
 
     sub r15d, 8
-    js .win_do_sleep
+    js .err_no_configure_bars
     mov rdx, r15
     mov rsi, rsp
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
     cmp rax, r15
-    jl .win_do_sleep
+    jl .err_no_configure_bars
 
+    cmp ebx, 1
+    jne .chk_wm_base_ping_bars
+    cmp ecx, 0
+    je .err_display_error_bars
+
+.chk_wm_base_ping_bars:
     cmp ebx, 6
     jne .chk_xdg_surf_evt
     cmp ecx, 0
@@ -5301,4 +5402,7 @@ _stub_x86_bars:
     mov rax, 60              ; sys_exit
     syscall
 .no_display_msg: db "RuntimeError: cannot open display", 10
+.msg_missing_global_bars: db "wayland: missing global", 10
+.msg_display_error_bars: db "wayland: display error", 10
+.msg_no_configure_bars: db "wayland: no configure", 10
 _stub_x86_bars_end:
