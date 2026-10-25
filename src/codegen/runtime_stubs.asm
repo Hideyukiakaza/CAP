@@ -3214,6 +3214,9 @@ _stub_x86_window:
     mov dword [rsp + 2028], 0
     mov dword [rsp + 2032], 0
     mov dword [rsp + 2036], 0
+    mov dword [rsp + 2040], 0
+    mov qword [rsp + 2048], 0
+    mov qword [rsp + 2056], 0
 
 .wl_read_globals_loop:
     dec dword [rsp + 2012]
@@ -3256,6 +3259,14 @@ _stub_x86_window:
     syscall
     cmp rax, r15
     jl .wl_globals_done
+
+    mov eax, r15d
+    add eax, 8
+    mov dword [rsp + 2040], eax
+    mov rax, qword [rsp]
+    mov qword [rsp + 2048], rax
+    mov rax, qword [rsp + 8]
+    mov qword [rsp + 2056], rax
 
     cmp ebx, 1
     jne .chk_reg_evt
@@ -3462,6 +3473,92 @@ _stub_x86_window:
     jnz .rev_l_loop
 
 .saw_done:
+    mov byte [rbx], 10
+    inc rbx
+
+    lea rsi, [rsp + 2100]
+    mov rdx, rbx
+    sub rdx, rsi
+    mov rdi, 2
+    mov rax, 1
+    syscall
+
+    lea rbx, [rsp + 2100]
+    mov byte [rbx], 'w'
+    mov byte [rbx + 1], 'a'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 'l'
+    mov byte [rbx + 4], 'a'
+    mov byte [rbx + 5], 'n'
+    mov byte [rbx + 6], 'd'
+    mov byte [rbx + 7], ':'
+    mov byte [rbx + 8], ' '
+    mov byte [rbx + 9], 's'
+    mov byte [rbx + 10], 'i'
+    mov byte [rbx + 11], 'z'
+    mov byte [rbx + 12], 'e'
+    mov byte [rbx + 13], '='
+    add rbx, 14
+
+    mov eax, dword [rsp + 2040]
+    mov r8d, eax
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_sz_loop:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_sz_loop
+.rev_sz_loop:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_sz_loop
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'b'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 't'
+    mov byte [rbx + 4], 'e'
+    mov byte [rbx + 5], 's'
+    mov byte [rbx + 6], '='
+    add rbx, 7
+
+    xor rcx, rcx
+.fmt_bytes_loop:
+    mov al, byte [rsp + 2048 + rcx]
+    shr al, 4
+    and al, 0x0F
+    cmp al, 10
+    jl .hex1
+    add al, 'a' - 10 - '0'
+.hex1:
+    add al, '0'
+    mov byte [rbx], al
+    inc rbx
+
+    mov al, byte [rsp + 2048 + rcx]
+    and al, 0x0F
+    cmp al, 10
+    jl .hex2
+    add al, 'a' - 10 - '0'
+.hex2:
+    add al, '0'
+    mov byte [rbx], al
+    inc rbx
+
+    inc rcx
+    cmp rcx, 16
+    jl .fmt_bytes_loop
+
     mov byte [rbx], 10
     inc rbx
 
@@ -4981,6 +5078,9 @@ _stub_x86_bars:
     mov dword [rsp + 2028], 0
     mov dword [rsp + 2032], 0
     mov dword [rsp + 2036], 0
+    mov dword [rsp + 2040], 0
+    mov qword [rsp + 2048], 0
+    mov qword [rsp + 2056], 0
 
 .wl_read_globals_loop:
     dec dword [rsp + 2012]
@@ -5023,6 +5123,14 @@ _stub_x86_bars:
     syscall
     cmp rax, r15
     jl .wl_globals_done
+
+    mov eax, r15d
+    add eax, 8
+    mov dword [rsp + 2040], eax
+    mov rax, qword [rsp]
+    mov qword [rsp + 2048], rax
+    mov rax, qword [rsp + 8]
+    mov qword [rsp + 2056], rax
 
     cmp ebx, 1
     jne .chk_reg_evt_bars
@@ -5229,6 +5337,92 @@ _stub_x86_bars:
     jnz .rev_l_loop_bars
 
 .saw_done_bars:
+    mov byte [rbx], 10
+    inc rbx
+
+    lea rsi, [rsp + 2100]
+    mov rdx, rbx
+    sub rdx, rsi
+    mov rdi, 2
+    mov rax, 1
+    syscall
+
+    lea rbx, [rsp + 2100]
+    mov byte [rbx], 'w'
+    mov byte [rbx + 1], 'a'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 'l'
+    mov byte [rbx + 4], 'a'
+    mov byte [rbx + 5], 'n'
+    mov byte [rbx + 6], 'd'
+    mov byte [rbx + 7], ':'
+    mov byte [rbx + 8], ' '
+    mov byte [rbx + 9], 's'
+    mov byte [rbx + 10], 'i'
+    mov byte [rbx + 11], 'z'
+    mov byte [rbx + 12], 'e'
+    mov byte [rbx + 13], '='
+    add rbx, 14
+
+    mov eax, dword [rsp + 2040]
+    mov r8d, eax
+    lea r9, [rsp + 2150]
+    xor rcx, rcx
+.fmt_sz_loop_bars:
+    mov eax, r8d
+    xor edx, edx
+    mov esi, 10
+    div esi
+    add dl, '0'
+    mov byte [r9 + rcx], dl
+    inc rcx
+    mov r8d, eax
+    test r8d, r8d
+    jnz .fmt_sz_loop_bars
+.rev_sz_loop_bars:
+    dec rcx
+    mov al, byte [r9 + rcx]
+    mov byte [rbx], al
+    inc rbx
+    test rcx, rcx
+    jnz .rev_sz_loop_bars
+
+    mov byte [rbx], ' '
+    mov byte [rbx + 1], 'b'
+    mov byte [rbx + 2], 'y'
+    mov byte [rbx + 3], 't'
+    mov byte [rbx + 4], 'e'
+    mov byte [rbx + 5], 's'
+    mov byte [rbx + 6], '='
+    add rbx, 7
+
+    xor rcx, rcx
+.fmt_bytes_loop_bars:
+    mov al, byte [rsp + 2048 + rcx]
+    shr al, 4
+    and al, 0x0F
+    cmp al, 10
+    jl .hex1_bars
+    add al, 'a' - 10 - '0'
+.hex1_bars:
+    add al, '0'
+    mov byte [rbx], al
+    inc rbx
+
+    mov al, byte [rsp + 2048 + rcx]
+    and al, 0x0F
+    cmp al, 10
+    jl .hex2_bars
+    add al, 'a' - 10 - '0'
+.hex2_bars:
+    add al, '0'
+    mov byte [rbx], al
+    inc rbx
+
+    inc rcx
+    cmp rcx, 16
+    jl .fmt_bytes_loop_bars
+
     mov byte [rbx], 10
     inc rbx
 
