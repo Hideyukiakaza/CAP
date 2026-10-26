@@ -3257,6 +3257,7 @@ _stub_x86_window:
     syscall
     cmp rax, r10
     jl .wl_globals_done
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
 
     mov eax, r10d
     add eax, 8
@@ -3927,6 +3928,7 @@ _stub_x86_window:
     mov r10d, ecx
     shr r10d, 16             ; total msg length
     and ecx, 0xFFFF          ; opcode
+    mov dword [rsp + 2032], ecx ; Preserve opcode across syscall
 
     sub r10d, 8
     js .err_no_configure
@@ -3937,6 +3939,7 @@ _stub_x86_window:
     syscall
     cmp rax, r10
     jl .err_no_configure
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
 
     cmp ebx, 1
     jne .chk_wm_base_ping
@@ -5210,6 +5213,7 @@ _stub_x86_bars:
     syscall
     cmp rax, r10
     jl .wl_globals_done
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
 
     mov eax, r10d
     add eax, 8
@@ -5976,6 +5980,7 @@ _stub_x86_bars:
     mov r15d, ecx
     shr r15d, 16             ; total msg length
     and ecx, 0xFFFF          ; opcode
+    mov dword [rsp + 2032], ecx ; Preserve opcode across syscall
 
     sub r15d, 8
     js .err_no_configure_bars
@@ -5986,6 +5991,7 @@ _stub_x86_bars:
     syscall
     cmp rax, r15
     jl .err_no_configure_bars
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
 
     cmp ebx, 1
     jne .chk_wm_base_ping_bars
