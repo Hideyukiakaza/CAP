@@ -2487,7 +2487,6 @@ _stub_x86_window:
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
-    add rsp, 4096
 
 .try_x11:
     ; --- TRY X11 SECOND ---
@@ -2931,7 +2930,7 @@ _stub_x86_window:
     mov rbx, rax             ; rbx = framebuffer ptr
 
     mov rcx, 80000
-    mov eax, 0x00FFFFFF
+    mov eax, 0xFFFFFFFF
     mov rdi, rbx
     rep stosd
     ; STEP 5: Send wl_shm.create_pool with SCM_RIGHTS
@@ -2944,7 +2943,7 @@ _stub_x86_window:
     mov qword [rsp + 32], rax; iov_base
     mov qword [rsp + 40], 16 ; iov_len
 
-    mov qword [rsp + 64], 24 ; cmsg_len = 24
+    mov qword [rsp + 64], 20 ; CMSG_LEN(sizeof(int))
     mov dword [rsp + 72], 1  ; SOL_SOCKET = 1
     mov dword [rsp + 76], 1  ; SCM_RIGHTS = 1
     mov eax, r15d
@@ -3541,7 +3540,6 @@ _stub_x86_bars:
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
-    add rsp, 4096
 
 .try_x11:
     mov r12, qword [rsp + 2064]
@@ -3989,7 +3987,7 @@ _stub_x86_bars:
     mov rbx, rax             ; rbx = framebuffer ptr
 
     mov rcx, 80000
-    mov eax, 0x00FFFFFF
+    mov eax, 0xFFFFFFFF
     mov rdi, rbx
     rep stosd
     cmp r13, 0
@@ -4016,7 +4014,7 @@ _stub_x86_bars:
     mov rcx, r8
     imul rcx, 400
     add rcx, r10
-    mov dword [rbx + rcx * 4], 0x002060FF
+    mov dword [rbx + rcx * 4], 0xFF2060FF
     inc r10
     jmp .b0_x_loop
 .b0_next_y:
@@ -4047,7 +4045,7 @@ _stub_x86_bars:
     mov rcx, r8
     imul rcx, 400
     add rcx, r10
-    mov dword [rbx + rcx * 4], 0x002060FF
+    mov dword [rbx + rcx * 4], 0xFF2060FF
     inc r10
     jmp .b1_x_loop
 .b1_next_y:
@@ -4078,7 +4076,7 @@ _stub_x86_bars:
     mov rcx, r8
     imul rcx, 400
     add rcx, r10
-    mov dword [rbx + rcx * 4], 0x002060FF
+    mov dword [rbx + rcx * 4], 0xFF2060FF
     inc r10
     jmp .b2_x_loop
 .b2_next_y:
@@ -4096,7 +4094,7 @@ _stub_x86_bars:
     mov qword [rsp + 32], rax; iov_base
     mov qword [rsp + 40], 16 ; iov_len
 
-    mov qword [rsp + 64], 24 ; cmsg_len = 24
+    mov qword [rsp + 64], 20 ; CMSG_LEN(sizeof(int))
     mov dword [rsp + 72], 1  ; SOL_SOCKET = 1
     mov dword [rsp + 76], 1  ; SCM_RIGHTS = 1
     mov eax, r15d
