@@ -2401,11 +2401,95 @@ _stub_x86_window:
     push r13
     push r14
     push r15
+    sub rsp, 4096
 
     mov r12, rdi             ; width
     mov r13, rsi             ; height
 
-    ; 1. sys_socket(1, 1, 0)
+    ; --- TRY WAYLAND FIRST ---
+    mov rax, 102             ; sys_getuid
+    syscall
+    mov r15, rax             ; r15 = uid
+
+    mov rdx, 0
+    mov rsi, 1
+    mov rdi, 1
+    mov rax, 41              ; sys_socket
+    syscall
+
+    test rax, rax
+    js .try_x11
+
+    mov r14, rax             ; r14 = wayland_sockfd
+
+        mov word [rsp], 1        ; AF_UNIX = 1
+    mov byte [rsp + 2], '/'
+    mov byte [rsp + 3], 'r'
+    mov byte [rsp + 4], 'u'
+    mov byte [rsp + 5], 'n'
+    mov byte [rsp + 6], '/'
+    mov byte [rsp + 7], 'u'
+    mov byte [rsp + 8], 's'
+    mov byte [rsp + 9], 'e'
+    mov byte [rsp + 10], 'r'
+    mov byte [rsp + 11], '/'
+
+    lea rbx, [rsp + 12]
+    mov rax, r15             ; uid
+    mov rdi, 10
+    xor rcx, rcx
+.win_uid_loop:
+    xor rdx, rdx
+    div rdi
+    add dl, '0'
+    mov [rbx + rcx], dl
+    inc rcx
+    test rax, rax
+    jnz .win_uid_loop
+
+    mov rsi, rcx
+    dec rsi
+    xor rdi, rdi
+.win_rev_uid:
+    cmp rdi, rsi
+    jge .win_rev_done
+    mov al, [rbx + rdi]
+    mov dl, [rbx + rsi]
+    mov [rbx + rdi], dl
+    mov [rbx + rsi], al
+    inc rdi
+    dec rsi
+    jmp .win_rev_uid
+.win_rev_done:
+
+    lea rbx, [rbx + rcx]
+    mov byte [rbx], '/'
+    mov byte [rbx + 1], 'w'
+    mov byte [rbx + 2], 'a'
+    mov byte [rbx + 3], 'y'
+    mov byte [rbx + 4], 'l'
+    mov byte [rbx + 5], 'a'
+    mov byte [rbx + 6], 'n'
+    mov byte [rbx + 7], 'd'
+    mov byte [rbx + 8], '-'
+    mov byte [rbx + 9], '0'
+    mov byte [rbx + 10], 0
+
+    mov rdx, 110
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 42              ; sys_connect
+    syscall
+
+    test rax, rax
+    jns .wl_handshake
+
+    mov rdi, r14
+    mov rax, 3               ; sys_close
+    syscall
+
+.try_x11:
+    ; --- TRY X11 SECOND ---
     mov rdx, 0
     mov rsi, 1
     mov rdi, 1
@@ -2415,11 +2499,9 @@ _stub_x86_window:
     test rax, rax
     js .no_display
 
-    mov r14, rax             ; r14 = sockfd
+    mov r14, rax             ; r14 = x11_sockfd
 
-    ; 2. Connect to /tmp/.X11-unix/X0
-    sub rsp, 256
-    mov word [rsp], 1        ; AF_UNIX = 1
+        mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 't'
     mov byte [rsp + 4], 'm'
@@ -2448,7 +2530,6 @@ _stub_x86_window:
     test rax, rax
     js .close_no_display
 
-    ; 3. Send X11 setup request (12 bytes)
     mov dword [rsp], 0x000B006C
     mov dword [rsp + 4], 0
     mov dword [rsp + 8], 0
@@ -2459,7 +2540,6 @@ _stub_x86_window:
     mov rax, 1               ; sys_write
     syscall
 
-    ; 4. Read X11 setup response header (8 bytes)
     mov rdx, 8
     mov rsi, rsp
     mov rdi, r14
@@ -2472,46 +2552,42 @@ _stub_x86_window:
     cmp byte [rsp], 1        ; status == 1 Success
     jne .close_no_display
 
-    movzx r15, word [rsp + 6] ; additional_data_len (4-byte words)
-    shl r15, 2               ; bytes
+    movzx r15, word [rsp + 6]
+    shl r15, 2
 
-    ; Read remaining setup response bytes
     mov rdx, r15
     mov rsi, rsp
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
 
-    ; Extract resource_id_base (offset 4)
     mov ebx, dword [rsp + 4] ; rbx = resource_id_base
     inc ebx                  ; window_id = resource_id_base + 1
 
-    ; Extract root_window_id & root_visual_id from Screen 0
     movzx ecx, word [rsp + 16] ; vendor_length
     add ecx, 3
-    and ecx, -4              ; pad vendor_length
+    and ecx, -4
     movzx eax, byte [rsp + 21] ; num_formats
-    shl eax, 3               ; num_formats * 8
+    shl eax, 3
     add ecx, eax
     add ecx, 24              ; offset to Screen 0
 
     lea rsi, [rsp + rcx]     ; rsi = &Screen0
     mov r8d, dword [rsi]     ; r8d = root_window_id
-    mov r9d, dword [rsi + 32]; r9d = root_visual_id (at offset 32!)
+    mov r9d, dword [rsi + 32]; r9d = root_visual_id at offset 32
 
-    ; 5. Send CreateWindow request (36 bytes = 9 dwords)
-    mov dword [rsp], 0x00090001 ; opcode 1, depth 0, req len 9
-    mov dword [rsp + 4], ebx    ; window_id
-    mov dword [rsp + 8], r8d    ; parent (root_window_id)
-    mov dword [rsp + 12], 0     ; x = 0, y = 0
+    mov dword [rsp], 0x00090001
+    mov dword [rsp + 4], ebx
+    mov dword [rsp + 8], r8d
+    mov dword [rsp + 12], 0
     mov eax, r13d
     shl eax, 16
     or eax, r12d
     mov dword [rsp + 16], eax   ; width | (height << 16)
-    mov dword [rsp + 20], 1     ; border_width = 0, class = 1 InputOutput
-    mov dword [rsp + 24], r9d   ; visual_id
-    mov dword [rsp + 28], 2     ; CWBackPixel = 0x02
-    mov dword [rsp + 32], 0x00FFFFFF ; background pixel = white
+    mov dword [rsp + 20], 1
+    mov dword [rsp + 24], r9d
+    mov dword [rsp + 28], 2
+    mov dword [rsp + 32], 0x00FFFFFF
 
     mov rdx, 36
     mov rsi, rsp
@@ -2519,9 +2595,8 @@ _stub_x86_window:
     mov rax, 1               ; sys_write
     syscall
 
-    ; 6. Send MapWindow request (8 bytes = 2 dwords)
-    mov dword [rsp], 0x00020008 ; opcode 8, req len 2
-    mov dword [rsp + 4], ebx    ; window_id
+    mov dword [rsp], 0x00020008
+    mov dword [rsp + 4], ebx
 
     mov rdx, 8
     mov rsi, rsp
@@ -2529,10 +2604,9 @@ _stub_x86_window:
     mov rax, 1               ; sys_write
     syscall
 
-    ; Check non-blocking reply for X11 Error (sys_recvfrom)
     xor r9, r9
     xor r8, r8
-    mov r10, 0x40            ; MSG_DONTWAIT = 0x40
+    mov r10, 0x40
     mov rdx, 32
     mov rsi, rsp
     mov rdi, r14
@@ -2540,12 +2614,493 @@ _stub_x86_window:
     syscall
 
     cmp rax, 1
-    jl .do_sleep
-    cmp byte [rsp], 0        ; 0 = X11 Error
+    jl .win_do_sleep
+    cmp byte [rsp], 0
     je .close_no_display
+    jmp .win_do_sleep
 
-.do_sleep:
-    ; 7. Nanosleep 2 seconds
+.wl_handshake:
+    ; STEP 1: Send wl_display.get_registry (Obj 1, Opcode 1, new_id = 2)
+    mov dword [rsp], 1       ; Obj ID 1
+    mov dword [rsp + 4], 0x000C0001 ; Req len 12, Opcode 1
+    mov dword [rsp + 8], 2   ; Registry ID 2
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1               ; sys_write
+    syscall
+
+    xor r12d, r12d
+    xor r13d, r13d
+    xor r15d, r15d
+    mov dword [rsp + 2012], 64 ; Max message count bound = 64
+    mov dword [rsp + 2024], 0
+    mov dword [rsp + 2028], 0
+    mov dword [rsp + 2032], 0
+    mov dword [rsp + 2036], 0
+    mov dword [rsp + 2040], 0
+    mov qword [rsp + 2048], 0
+    mov qword [rsp + 2056], 0
+
+.wl_read_globals_loop:
+    dec dword [rsp + 2012]
+    jz .wl_globals_done
+
+    mov dword [rsp + 2016], r14d
+    mov word [rsp + 2020], 1
+    mov word [rsp + 2022], 0
+    lea rdi, [rsp + 2016]
+    mov rsi, 1
+    mov rdx, 1000
+    mov rax, 7               ; sys_poll
+    syscall
+    cmp rax, 0
+    jle .wl_globals_done
+
+    mov rdx, 8
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, 8
+    jl .wl_globals_done
+
+    mov ebx, dword [rsp]     ; sender obj id
+    mov ecx, dword [rsp + 4] ; (len << 16) | opcode
+    mov r10d, ecx
+    shr r10d, 16             ; total msg length
+    and ecx, 0xFFFF          ; opcode
+    inc dword [rsp + 2024]
+    mov dword [rsp + 2028], ebx
+    mov dword [rsp + 2032], ecx
+
+    sub r10d, 8
+    js .wl_globals_done
+    mov rdx, r10
+    lea rsi, [rsp + 512]
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, r10
+    jl .wl_globals_done
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
+
+    mov eax, r10d
+    add eax, 8
+    mov dword [rsp + 2040], eax
+    mov rax, qword [rsp + 512]
+    mov qword [rsp + 2048], rax
+    mov rax, qword [rsp + 520]
+    mov qword [rsp + 2056], rax
+
+    cmp ebx, 1
+    jne .chk_reg_evt
+    cmp ecx, 0
+    je .err_display_error
+
+.chk_reg_evt:
+    cmp ebx, 2
+    jne .check_globals_done
+    cmp ecx, 0
+    jne .check_globals_done
+
+    mov eax, dword [rsp + 512] ; global name
+    mov r8d, dword [rsp + 516] ; interface string length
+    lea r9, [rsp + 520]        ; interface string pointer
+
+    ; wl_compositor len is 14
+    cmp r8d, 14
+    jne .chk_shm
+    cmp dword [r9], 0x635F6C77 ; "wl_c"
+    jne .chk_shm
+    cmp dword [r9 + 4], 0x6F706D6F ; "ompo"
+    jne .chk_shm
+    cmp dword [r9 + 8], 0x6F746973 ; "sito"
+    jne .chk_shm
+    cmp word [r9 + 12], 0x0072     ; r_nul
+    jne .chk_shm
+    mov r12d, eax               ; compositor_id = name
+    jmp .check_globals_done
+
+.chk_shm:
+    ; wl_shm len is 7
+    cmp r8d, 7
+    jne .chk_xdg
+    cmp dword [r9], 0x735F6C77 ; "wl_s"
+    jne .chk_xdg
+    cmp dword [r9 + 3], 0x006D6873 ; shm_nul
+    jne .chk_xdg
+    mov r13d, eax               ; shm_id = name
+    jmp .check_globals_done
+
+.chk_xdg:
+    ; xdg_wm_base len is 12
+    cmp r8d, 12
+    jne .check_globals_done
+    cmp dword [r9], 0x5F676478 ; "xdg_"
+    jne .check_globals_done
+    cmp dword [r9 + 4], 0x625F6D77 ; "wm_b"
+    jne .check_globals_done
+    cmp dword [r9 + 8], 0x00657361 ; ase_nul
+    jne .check_globals_done
+    mov r15d, eax               ; xdg_wm_base_id = name
+
+.check_globals_done:
+    test r12d, r12d
+    jz .wl_read_globals_loop
+    test r13d, r13d
+    jz .wl_read_globals_loop
+    test r15d, r15d
+    jz .wl_read_globals_loop
+
+.wl_globals_done:
+    test r12d, r12d
+    jz .err_missing_global
+    test r13d, r13d
+    jz .err_missing_global
+    test r15d, r15d
+    jz .err_missing_global
+    jmp .wl_bind_globals
+
+.err_missing_global:
+    mov rdi, 2
+    lea rsi, [rel .msg_missing_global]
+    mov rdx, 23
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_display_error:
+    mov rdi, 2
+    lea rsi, [rel .msg_display_error]
+    mov rdx, 22
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_no_configure:
+    mov rdi, 2
+    lea rsi, [rel .msg_no_configure]
+    mov rdx, 21
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.wl_bind_globals:
+    ; STEP 2: Send BIND requests
+    ; 1) bind wl_compositor (obj 4) - str len 14, padded to 16
+    mov dword [rsp], 2       ; obj 2
+    mov dword [rsp + 4], 0x00280000 ; len 40, opcode 0
+    mov dword [rsp + 8], r12d; global name
+    mov dword [rsp + 12], 14 ; str len 14
+    mov dword [rsp + 16], 0x635F6C77 ; "wl_c"
+    mov dword [rsp + 20], 0x6F706D6F ; "ompo"
+    mov dword [rsp + 24], 0x6F746973 ; "sito"
+    mov dword [rsp + 28], 0x00000072 ; "r"
+    mov dword [rsp + 32], 1  ; version 1
+    mov dword [rsp + 36], 4  ; new_id = 4 (wl_compositor)
+    mov rdx, 40
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; 2) bind wl_shm (obj 5) - str len 7, padded to 8
+    mov dword [rsp], 2       ; obj 2
+    mov dword [rsp + 4], 0x00200000 ; len 32, opcode 0
+    mov dword [rsp + 8], r13d; global name
+    mov dword [rsp + 12], 7  ; str len 7
+    mov dword [rsp + 16], 0x735F6C77 ; "wl_s"
+    mov dword [rsp + 20], 0x00006D68 ; "hm"
+    mov dword [rsp + 24], 1  ; version 1
+    mov dword [rsp + 28], 5  ; new_id = 5 (wl_shm)
+    mov rdx, 32
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; 3) bind xdg_wm_base (obj 6) - str len 12, padded to 12
+    mov dword [rsp], 2       ; obj 2
+    mov dword [rsp + 4], 0x00240000 ; len 36, opcode 0
+    mov dword [rsp + 8], r15d ; global name
+    mov dword [rsp + 12], 12 ; str len 12
+    mov dword [rsp + 16], 0x5F676478 ; "xdg_"
+    mov dword [rsp + 20], 0x625F6D77 ; "wm_b"
+    mov dword [rsp + 24], 0x00657361 ; "ase"
+    mov dword [rsp + 28], 1  ; version 1
+    mov dword [rsp + 32], 6  ; new_id = 6 (xdg_wm_base)
+    mov rdx, 36
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; STEP 3: Create Surface & XDG Objects
+    mov dword [rsp], 4
+    mov dword [rsp + 4], 0x000C0000 ; len 12, opcode 0
+    mov dword [rsp + 8], 7          ; new_id = 7 (wl_surface)
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    mov dword [rsp], 6
+    mov dword [rsp + 4], 0x00100002 ; len 16, opcode 2
+    mov dword [rsp + 8], 8          ; new_id = 8 (xdg_surface)
+    mov dword [rsp + 12], 7         ; surface = 7
+    mov rdx, 16
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    mov dword [rsp], 8
+    mov dword [rsp + 4], 0x000C0001 ; len 12, opcode 1
+    mov dword [rsp + 8], 9          ; new_id = 9 (xdg_toplevel)
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; set_app_id on object 9 (opcode 3, "cap\0")
+    mov dword [rsp], 9
+    mov dword [rsp + 4], 0x00100003 ; len 16, opcode 3
+    mov dword [rsp + 8], 4          ; str len 4 (including NUL)
+    mov dword [rsp + 12], 0x00706163; "cap\0"
+    mov rdx, 16
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; STEP 4: Create Shared Memory Framebuffer
+    mov rsi, 0
+    mov byte [rsp + 200], 'c'
+    mov byte [rsp + 201], 'a'
+    mov byte [rsp + 202], 'p'
+    mov byte [rsp + 203], '_'
+    mov byte [rsp + 204], 's'
+    mov byte [rsp + 205], 'h'
+    mov byte [rsp + 206], 'm'
+    mov byte [rsp + 207], 0
+    lea rdi, [rsp + 200]
+    mov rax, 319             ; sys_memfd_create
+    syscall
+    test rax, rax
+    jns .got_shm_fd
+
+    mov rdx, 0600o
+    mov rsi, 0x202           ; O_RDWR | O_CREAT | O_TRUNC
+    mov byte [rsp + 200], '/'
+    mov byte [rsp + 201], 't'
+    mov byte [rsp + 202], 'm'
+    mov byte [rsp + 203], 'p'
+    mov byte [rsp + 204], '/'
+    mov byte [rsp + 205], 'c'
+    mov byte [rsp + 206], 'a'
+    mov byte [rsp + 207], 'p'
+    mov byte [rsp + 208], 0
+    lea rdi, [rsp + 200]
+    mov rax, 2               ; sys_open
+    syscall
+    test rax, rax
+    js .try_x11
+
+.got_shm_fd:
+    mov r15, rax             ; r15 = shm_fd
+
+    mov rsi, 320000
+    mov rdi, r15
+    mov rax, 77              ; sys_ftruncate
+    syscall
+
+    mov r9, 0                ; offset = 0
+    mov r8, r15              ; fd
+    mov r10, 1               ; MAP_SHARED
+    mov rdx, 3               ; PROT_READ | PROT_WRITE
+    mov rsi, 320000          ; len
+    mov rdi, 0               ; addr = NULL
+    mov rax, 9               ; sys_mmap
+    syscall
+    test rax, rax
+    js .try_x11
+    mov rbx, rax             ; rbx = framebuffer ptr
+
+    mov rcx, 80000
+    mov eax, 0xFFFFFFFF
+    mov rdi, rbx
+    rep stosd
+    ; STEP 5: Send wl_shm.create_pool with SCM_RIGHTS
+    mov dword [rsp], 5       ; obj 5
+    mov dword [rsp + 4], 0x00100000 ; len 16, opcode 0
+    mov dword [rsp + 8], 10  ; new_id = 10 (wl_shm_pool)
+    mov dword [rsp + 12], 320000 ; size
+
+    lea rax, [rsp]
+    mov qword [rsp + 32], rax; iov_base
+    mov qword [rsp + 40], 16 ; iov_len
+
+    mov qword [rsp + 64], 20 ; CMSG_LEN(sizeof(int))
+    mov dword [rsp + 72], 1  ; SOL_SOCKET = 1
+    mov dword [rsp + 76], 1  ; SCM_RIGHTS = 1
+    mov eax, r15d
+    mov dword [rsp + 80], eax; fd
+
+    ; Linux x86-64 struct msghdr, placed at an aligned address.
+    mov qword [rsp + 160], 0 ; msg_name = NULL
+    mov dword [rsp + 168], 0 ; msg_namelen = 0
+    lea rax, [rsp + 32]
+    mov qword [rsp + 176], rax ; msg_iov
+    mov qword [rsp + 184], 1 ; msg_iovlen = 1
+    lea rax, [rsp + 64]
+    mov qword [rsp + 192], rax ; msg_control
+    mov qword [rsp + 200], 24 ; msg_controllen = 24
+    mov dword [rsp + 208], 0 ; msg_flags = 0
+
+    mov rdx, 0
+    lea rsi, [rsp + 160]
+    mov rdi, r14
+    mov rax, 46              ; sys_sendmsg
+    syscall
+
+    mov rdi, r15
+    mov rax, 3               ; sys_close
+    syscall
+
+    ; STEP 6: Create Buffer, Attach, Commit
+    mov dword [rsp], 10      ; obj 10
+    mov dword [rsp + 4], 0x00200000 ; len 32, opcode 0
+    mov dword [rsp + 8], 11  ; new_id = 11 (wl_buffer)
+    mov dword [rsp + 12], 0  ; offset = 0
+    mov dword [rsp + 16], 400; width = 400
+    mov dword [rsp + 20], 200; height = 200
+    mov dword [rsp + 24], 1600; stride = 1600
+    mov dword [rsp + 28], 0  ; format = 0
+    mov rdx, 32
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; Initial xdg_surface commit: no buffer attached yet.
+    mov dword [rsp], 7
+    mov dword [rsp + 4], 0x00080006 ; len 8, wl_surface.commit
+    mov rdx, 8
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; STEP 7: Read Events until xdg_surface.configure (max 64 events bound)
+    mov dword [rsp + 2012], 64
+
+.wl_event_loop:
+    dec dword [rsp + 2012]
+    jz .err_no_configure
+
+    mov dword [rsp + 2016], r14d
+    mov word [rsp + 2020], 1
+    mov word [rsp + 2022], 0
+    lea rdi, [rsp + 2016]
+    mov rsi, 1
+    mov rdx, 1000
+    mov rax, 7               ; sys_poll
+    syscall
+    cmp rax, 0
+    jle .err_no_configure
+
+    mov rdx, 8
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, 8
+    jl .err_no_configure
+
+    mov ebx, dword [rsp]     ; sender obj id
+    mov ecx, dword [rsp + 4] ; (len << 16) | opcode
+    mov r10d, ecx
+    shr r10d, 16             ; total msg length
+    and ecx, 0xFFFF          ; opcode
+    mov dword [rsp + 2032], ecx ; Preserve opcode across syscall
+
+    sub r10d, 8
+    js .err_no_configure
+    mov rdx, r10
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, r10
+    jl .err_no_configure
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
+
+    cmp ebx, 1
+    jne .chk_wm_base_ping
+    cmp ecx, 0
+    je .err_display_error
+
+.chk_wm_base_ping:
+    cmp ebx, 6
+    jne .chk_xdg_surf_evt
+    cmp ecx, 0
+    jne .chk_xdg_surf_evt
+
+    mov eax, dword [rsp]     ; ping serial
+    mov dword [rsp + 32], 6  ; obj 6
+    mov dword [rsp + 36], 0x000C0003 ; len 12, opcode 3
+    mov dword [rsp + 40], eax; serial
+    mov rdx, 12
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+    jmp .wl_event_loop
+
+.chk_xdg_surf_evt:
+    cmp ebx, 8
+    jne .wl_event_loop
+    cmp ecx, 0
+    jne .wl_event_loop
+
+    mov eax, dword [rsp]     ; configure serial
+
+    mov dword [rsp + 32], 8  ; obj 8
+    mov dword [rsp + 36], 0x000C0004 ; len 12, opcode 4
+    mov dword [rsp + 40], eax; serial
+    mov rdx, 12
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; Now that xdg_surface.configure has been acknowledged,
+    ; attach the buffer and commit the configured surface.
+    mov dword [rsp + 32], 7
+    mov dword [rsp + 36], 0x00140001 ; len 20, wl_surface.attach
+    mov dword [rsp + 40], 11 ; buffer ID
+    mov dword [rsp + 44], 0 ; x
+    mov dword [rsp + 48], 0 ; y
+    mov rdx, 20
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    mov dword [rsp + 32], 7
+    mov dword [rsp + 36], 0x00080006 ; len 8, wl_surface.commit
+    mov rdx, 8
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    jmp .win_do_sleep
+
+.win_do_sleep:
     mov qword [rsp], 2       ; tv_sec = 2
     mov qword [rsp + 8], 0   ; tv_nsec = 0
     mov rsi, 0
@@ -2553,12 +3108,11 @@ _stub_x86_window:
     mov rax, 35              ; sys_nanosleep
     syscall
 
-    ; Close socket & return 0
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
 
-    add rsp, 256
+    add rsp, 4096
     xor rax, rax             ; return 0
     mov rdx, 1               ; INT tag = 1
     pop r15
@@ -2573,7 +3127,7 @@ _stub_x86_window:
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
-    add rsp, 256
+    add rsp, 4096
 
 .no_display:
     mov rdi, 2               ; STDERR
@@ -2585,6 +3139,9 @@ _stub_x86_window:
     mov rax, 60              ; sys_exit
     syscall
 .no_display_msg: db "RuntimeError: cannot open display", 10
+.msg_missing_global: db "wayland: missing global", 10
+.msg_display_error: db "wayland: display error", 10
+.msg_no_configure: db "wayland: no configure", 10
 _stub_x86_window_end:
 
 
@@ -2895,10 +3452,99 @@ _stub_x86_bars:
     push r13
     push r14
     push r15
+    sub rsp, 4096
 
-    mov r12, rdi             ; r12 = list_ptr
+    mov qword [rsp + 2064], rdi ; save list_ptr
+    mov qword [rsp + 2072], rsi ; save list_len
+    mov r12, rdi             ; list_ptr
+    mov r13, rsi             ; list_len
 
-    ; 1. sys_socket(1, 1, 0)
+    ; --- TRY WAYLAND FIRST ---
+    mov rax, 102             ; sys_getuid
+    syscall
+    mov r15, rax             ; r15 = uid
+
+    mov rdx, 0
+    mov rsi, 1
+    mov rdi, 1
+    mov rax, 41              ; sys_socket
+    syscall
+
+    test rax, rax
+    js .try_x11
+
+    mov r14, rax             ; r14 = wayland_sockfd
+
+        mov word [rsp], 1        ; AF_UNIX = 1
+    mov byte [rsp + 2], '/'
+    mov byte [rsp + 3], 'r'
+    mov byte [rsp + 4], 'u'
+    mov byte [rsp + 5], 'n'
+    mov byte [rsp + 6], '/'
+    mov byte [rsp + 7], 'u'
+    mov byte [rsp + 8], 's'
+    mov byte [rsp + 9], 'e'
+    mov byte [rsp + 10], 'r'
+    mov byte [rsp + 11], '/'
+
+    lea rbx, [rsp + 12]
+    mov rax, r15             ; uid
+    mov rdi, 10
+    xor rcx, rcx
+.win_uid_loop:
+    xor rdx, rdx
+    div rdi
+    add dl, '0'
+    mov [rbx + rcx], dl
+    inc rcx
+    test rax, rax
+    jnz .win_uid_loop
+
+    mov rsi, rcx
+    dec rsi
+    xor rdi, rdi
+.win_rev_uid:
+    cmp rdi, rsi
+    jge .win_rev_done
+    mov al, [rbx + rdi]
+    mov dl, [rbx + rsi]
+    mov [rbx + rdi], dl
+    mov [rbx + rsi], al
+    inc rdi
+    dec rsi
+    jmp .win_rev_uid
+.win_rev_done:
+
+    lea rbx, [rbx + rcx]
+    mov byte [rbx], '/'
+    mov byte [rbx + 1], 'w'
+    mov byte [rbx + 2], 'a'
+    mov byte [rbx + 3], 'y'
+    mov byte [rbx + 4], 'l'
+    mov byte [rbx + 5], 'a'
+    mov byte [rbx + 6], 'n'
+    mov byte [rbx + 7], 'd'
+    mov byte [rbx + 8], '-'
+    mov byte [rbx + 9], '0'
+    mov byte [rbx + 10], 0
+
+    mov rdx, 110
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 42              ; sys_connect
+    syscall
+
+    test rax, rax
+    jns .wl_handshake
+
+    mov rdi, r14
+    mov rax, 3               ; sys_close
+    syscall
+
+.try_x11:
+    mov r12, qword [rsp + 2064]
+    mov r13, qword [rsp + 2072]
+    ; --- TRY X11 SECOND ---
     mov rdx, 0
     mov rsi, 1
     mov rdi, 1
@@ -2908,11 +3554,9 @@ _stub_x86_bars:
     test rax, rax
     js .no_display
 
-    mov r14, rax             ; r14 = sockfd
+    mov r14, rax             ; r14 = x11_sockfd
 
-    ; 2. Connect to /tmp/.X11-unix/X0
-    sub rsp, 2048
-    mov word [rsp], 1        ; AF_UNIX = 1
+        mov word [rsp], 1        ; AF_UNIX = 1
     mov byte [rsp + 2], '/'
     mov byte [rsp + 3], 't'
     mov byte [rsp + 4], 'm'
@@ -2941,7 +3585,6 @@ _stub_x86_bars:
     test rax, rax
     js .close_no_display
 
-    ; 3. Send X11 setup request (12 bytes)
     mov dword [rsp], 0x000B006C
     mov dword [rsp + 4], 0
     mov dword [rsp + 8], 0
@@ -2952,7 +3595,6 @@ _stub_x86_bars:
     mov rax, 1               ; sys_write
     syscall
 
-    ; 4. Read X11 setup response header (8 bytes)
     mov rdx, 8
     mov rsi, rsp
     mov rdi, r14
@@ -2965,44 +3607,42 @@ _stub_x86_bars:
     cmp byte [rsp], 1        ; status == 1 Success
     jne .close_no_display
 
-    movzx r15, word [rsp + 6] ; additional_data_len (4-byte words)
-    shl r15, 2               ; bytes
+    movzx r15, word [rsp + 6]
+    shl r15, 2
 
-    ; Read remaining setup response bytes
     mov rdx, r15
     mov rsi, rsp
     mov rdi, r14
     mov rax, 0               ; sys_read
     syscall
 
-    ; Extract resource_id_base (offset 4)
     mov ebx, dword [rsp + 4] ; rbx = resource_id_base
-    lea r15d, [rbx + 1]      ; r15d = window_id
-    lea r13d, [rbx + 2]      ; r13d = gc_id
+    inc ebx                  ; window_id = resource_id_base + 1
 
-    ; Extract root_window_id & root_visual_id from Screen 0
     movzx ecx, word [rsp + 16] ; vendor_length
     add ecx, 3
-    and ecx, -4              ; pad vendor_length
+    and ecx, -4
     movzx eax, byte [rsp + 21] ; num_formats
-    shl eax, 3               ; num_formats * 8
+    shl eax, 3
     add ecx, eax
     add ecx, 24              ; offset to Screen 0
 
     lea rsi, [rsp + rcx]     ; rsi = &Screen0
     mov r8d, dword [rsi]     ; r8d = root_window_id
-    mov r9d, dword [rsi + 32]; r9d = root_visual_id (at offset 32!)
+    mov r9d, dword [rsi + 32]; r9d = root_visual_id at offset 32
 
-    ; 5. Send CreateWindow request (36 bytes = 9 dwords, 400x200)
-    mov dword [rsp], 0x00090001 ; opcode 1, depth 0, req len 9
-    mov dword [rsp + 4], r15d   ; window_id
-    mov dword [rsp + 8], r8d    ; parent (root_window_id)
-    mov dword [rsp + 12], 0     ; x = 0, y = 0
-    mov dword [rsp + 16], 0x00C80190 ; width=400 (0x0190), height=200 (0x00C8)
-    mov dword [rsp + 20], 1     ; border_width = 0, class = 1 InputOutput
-    mov dword [rsp + 24], r9d   ; visual_id
-    mov dword [rsp + 28], 2     ; CWBackPixel = 0x02
-    mov dword [rsp + 32], 0x00FFFFFF ; background pixel = white
+    mov dword [rsp], 0x00090001
+    mov dword [rsp + 4], ebx
+    mov dword [rsp + 8], r8d
+    mov dword [rsp + 12], 0
+    mov eax, 200
+    shl eax, 16
+    or eax, 400
+    mov dword [rsp + 16], eax
+    mov dword [rsp + 20], 1
+    mov dword [rsp + 24], r9d
+    mov dword [rsp + 28], 2
+    mov dword [rsp + 32], 0x00FFFFFF
 
     mov rdx, 36
     mov rsi, rsp
@@ -3010,104 +3650,8 @@ _stub_x86_bars:
     mov rax, 1               ; sys_write
     syscall
 
-    ; 6. Send CreateGC request (20 bytes = 5 dwords, foreground = 0x2060FF)
-    mov dword [rsp], 0x00050037 ; opcode 55 (CreateGC), req len 5
-    mov dword [rsp + 4], r13d   ; gc_id
-    mov dword [rsp + 8], r15d   ; drawable (window_id)
-    mov dword [rsp + 12], 4    ; GCForeground = 0x04
-    mov dword [rsp + 16], 0x002060FF ; foreground = 0x2060FF
-
-    mov rdx, 20
-    mov rsi, rsp
-    mov rdi, r14
-    mov rax, 1               ; sys_write
-    syscall
-
-    ; 7. Calculate max_val in list and bar rectangles
-    mov r8, [r12]            ; r8 = n = len(list)
-    xor r9, r9               ; max_val = 0
-    xor rcx, rcx             ; idx = 0
-.bars_find_max:
-    cmp rcx, r8
-    jge .bars_max_done
-    mov r10, [r12 + 16 + rcx * 8]
-    cmp r10, r9
-    jle .bars_next_max
-    mov r9, r10
-.bars_next_max:
-    inc rcx
-    jmp .bars_find_max
-
-.bars_max_done:
-    test r9, r9
-    jnz .bars_has_max
-    mov r9, 1                ; max_val = max(max_val, 1)
-
-.bars_has_max:
-    ; w = 400 / n
-    mov rax, 400
-    xor rdx, rdx
-    div r8
-    mov r10, rax             ; r10 = bar_width
-
-    ; Prepare PolyFillRectangle header (12 bytes = 3 dwords) + n * 8 bytes
-    lea rax, [r8 * 2 + 3]
-    shl rax, 16
-    or rax, 0x46             ; opcode 70 (PolyFillRectangle), req len
-    mov dword [rsp], eax
-    mov dword [rsp + 4], r15d; drawable (window_id)
-    mov dword [rsp + 8], r13d; gc_id
-
-    xor rcx, rcx             ; idx = 0
-.bars_fill_rects:
-    cmp rcx, r8
-    jge .bars_send_rects
-    mov rax, [r12 + 16 + rcx * 8] ; val
-
-    ; h = (val * 180) / max_val
-    mov r11, 180
-    imul rax, r11
-    xor rdx, rdx
-    div r9
-    mov r11, rax             ; r11 = bar_height
-
-    ; y_pos = 200 - bar_height
-    mov rax, 200
-    sub rax, r11             ; rax = y_pos
-
-    ; x_pos = idx * bar_width
-    mov rsi, rcx
-    imul rsi, r10       ; rsi = x_pos
-
-    ; rect dword 0: (y_pos << 16) | (x_pos & 0xFFFF)
-    shl eax, 16
-    and esi, 0xFFFF
-    or eax, esi
-
-    ; rect dword 1: (bar_height << 16) | (bar_width & 0xFFFF)
-    shl r11d, 16
-    mov rdi, r10
-    and edi, 0xFFFF
-    or r11d, edi
-
-    mov dword [rsp + 12 + rcx * 8], eax
-    mov dword [rsp + 16 + rcx * 8], r11d
-
-    inc rcx
-    jmp .bars_fill_rects
-
-.bars_send_rects:
-    lea rax, [r8 * 2 + 3]
-    shl rax, 2               ; bytes = (3 + 2 * n) * 4
-    mov rdx, rax
-    mov rsi, rsp
-    mov rdi, r14
-    mov rax, 1               ; sys_write
-    syscall
-
-    ; 8. Send MapWindow request (8 bytes = 2 dwords)
-    mov dword [rsp], 0x00020008 ; opcode 8, req len 2
-    mov dword [rsp + 4], r15d   ; window_id
+    mov dword [rsp], 0x00020008
+    mov dword [rsp + 4], ebx
 
     mov rdx, 8
     mov rsi, rsp
@@ -3115,10 +3659,9 @@ _stub_x86_bars:
     mov rax, 1               ; sys_write
     syscall
 
-    ; Check non-blocking reply for X11 Error (sys_recvfrom)
     xor r9, r9
     xor r8, r8
-    mov r10, 0x40            ; MSG_DONTWAIT = 0x40
+    mov r10, 0x40
     mov rdx, 32
     mov rsi, rsp
     mov rdi, r14
@@ -3126,12 +3669,589 @@ _stub_x86_bars:
     syscall
 
     cmp rax, 1
-    jl .bars_do_sleep
-    cmp byte [rsp], 0        ; 0 = X11 Error
+    jl .win_do_sleep
+    cmp byte [rsp], 0
     je .close_no_display
+    jmp .win_do_sleep
 
-.bars_do_sleep:
-    ; 9. Nanosleep 2 seconds
+.wl_handshake:
+    ; STEP 1: Send wl_display.get_registry (Obj 1, Opcode 1, new_id = 2)
+    mov dword [rsp], 1       ; Obj ID 1
+    mov dword [rsp + 4], 0x000C0001 ; Req len 12, Opcode 1
+    mov dword [rsp + 8], 2   ; Registry ID 2
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1               ; sys_write
+    syscall
+
+    xor r12d, r12d
+    xor r13d, r13d
+    xor r15d, r15d
+        mov dword [rsp + 2012], 64 ; Max message count bound = 64
+    mov dword [rsp + 2024], 0
+    mov dword [rsp + 2028], 0
+    mov dword [rsp + 2032], 0
+    mov dword [rsp + 2036], 0
+    mov dword [rsp + 2040], 0
+    mov qword [rsp + 2048], 0
+    mov qword [rsp + 2056], 0
+
+.wl_read_globals_loop:
+    dec dword [rsp + 2012]
+    jz .wl_globals_done
+
+    mov dword [rsp + 2016], r14d
+    mov word [rsp + 2020], 1
+    mov word [rsp + 2022], 0
+    lea rdi, [rsp + 2016]
+    mov rsi, 1
+    mov rdx, 1000
+    mov rax, 7               ; sys_poll
+    syscall
+    cmp rax, 0
+    jle .wl_globals_done
+
+    mov rdx, 8
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, 8
+    jl .wl_globals_done
+
+    mov ebx, dword [rsp]     ; sender obj id
+    mov ecx, dword [rsp + 4] ; (len << 16) | opcode
+    mov r10d, ecx
+    shr r10d, 16             ; total msg length
+    and ecx, 0xFFFF          ; opcode
+    inc dword [rsp + 2024]
+    mov dword [rsp + 2028], ebx
+    mov dword [rsp + 2032], ecx
+
+    sub r10d, 8
+    js .wl_globals_done
+    mov rdx, r10
+    lea rsi, [rsp + 512]
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, r10
+    jl .wl_globals_done
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
+
+    mov eax, r10d
+    add eax, 8
+    mov dword [rsp + 2040], eax
+    mov rax, qword [rsp + 512]
+    mov qword [rsp + 2048], rax
+    mov rax, qword [rsp + 520]
+    mov qword [rsp + 2056], rax
+
+    cmp ebx, 1
+    jne .chk_reg_evt_bars
+    cmp ecx, 0
+    je .err_display_error_bars
+
+.chk_reg_evt_bars:
+    cmp ebx, 2
+    jne .check_globals_done
+    cmp ecx, 0
+    jne .check_globals_done
+
+    mov eax, dword [rsp + 512] ; global name
+    mov r8d, dword [rsp + 516] ; interface string length
+    lea r9, [rsp + 520]        ; interface string pointer
+
+    ; wl_compositor len is 14
+    cmp r8d, 14
+    jne .chk_shm
+    cmp dword [r9], 0x635F6C77 ; "wl_c"
+    jne .chk_shm
+    cmp dword [r9 + 4], 0x6F706D6F ; "ompo"
+    jne .chk_shm
+    cmp dword [r9 + 8], 0x6F746973 ; "sito"
+    jne .chk_shm
+    cmp word [r9 + 12], 0x0072     ; r_nul
+    jne .chk_shm
+    mov r12d, eax               ; compositor_id = name
+    jmp .check_globals_done
+
+.chk_shm:
+    ; wl_shm len is 7
+    cmp r8d, 7
+    jne .chk_xdg
+    cmp dword [r9], 0x735F6C77 ; "wl_s"
+    jne .chk_xdg
+    cmp dword [r9 + 3], 0x006D6873 ; shm_nul
+    jne .chk_xdg
+    mov r13d, eax               ; shm_id = name
+    jmp .check_globals_done
+
+.chk_xdg:
+    ; xdg_wm_base len is 12
+    cmp r8d, 12
+    jne .check_globals_done
+    cmp dword [r9], 0x5F676478 ; "xdg_"
+    jne .check_globals_done
+    cmp dword [r9 + 4], 0x625F6D77 ; "wm_b"
+    jne .check_globals_done
+    cmp dword [r9 + 8], 0x00657361 ; ase_nul
+    jne .check_globals_done
+    mov r15d, eax               ; xdg_wm_base_id = name
+
+.check_globals_done:
+    test r12d, r12d
+    jz .wl_read_globals_loop
+    test r13d, r13d
+    jz .wl_read_globals_loop
+    test r15d, r15d
+    jz .wl_read_globals_loop
+
+.wl_globals_done:
+    test r12d, r12d
+    jz .err_missing_global_bars
+    test r13d, r13d
+    jz .err_missing_global_bars
+    test r15d, r15d
+    jz .err_missing_global_bars
+    jmp .wl_bind_globals_bars
+
+.err_missing_global_bars:
+    mov rdi, 2
+    lea rsi, [rel .msg_missing_global_bars]
+    mov rdx, 23
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_display_error_bars:
+    mov rdi, 2
+    lea rsi, [rel .msg_display_error_bars]
+    mov rdx, 22
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.err_no_configure_bars:
+    mov rdi, 2
+    lea rsi, [rel .msg_no_configure_bars]
+    mov rdx, 21
+    mov rax, 1
+    syscall
+    jmp .win_do_sleep
+
+.wl_bind_globals_bars:
+    ; STEP 2: Send BIND requests
+    ; 1) bind wl_compositor (obj 4) - str len 14, padded to 16
+    mov dword [rsp], 2       ; obj 2
+    mov dword [rsp + 4], 0x00280000 ; len 40, opcode 0
+    mov dword [rsp + 8], r12d; global name
+    mov dword [rsp + 12], 14 ; str len 14
+    mov dword [rsp + 16], 0x635F6C77 ; "wl_c"
+    mov dword [rsp + 20], 0x6F706D6F ; "ompo"
+    mov dword [rsp + 24], 0x6F746973 ; "sito"
+    mov dword [rsp + 28], 0x00000072 ; "r"
+    mov dword [rsp + 32], 1  ; version 1
+    mov dword [rsp + 36], 4  ; new_id = 4 (wl_compositor)
+    mov rdx, 40
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; 2) bind wl_shm (obj 5) - str len 7, padded to 8
+    mov dword [rsp], 2       ; obj 2
+    mov dword [rsp + 4], 0x00200000 ; len 32, opcode 0
+    mov dword [rsp + 8], r13d; global name
+    mov dword [rsp + 12], 7  ; str len 7
+    mov dword [rsp + 16], 0x735F6C77 ; "wl_s"
+    mov dword [rsp + 20], 0x00006D68 ; "hm"
+    mov dword [rsp + 24], 1  ; version 1
+    mov dword [rsp + 28], 5  ; new_id = 5 (wl_shm)
+    mov rdx, 32
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; 3) bind xdg_wm_base (obj 6) - str len 12, padded to 12
+    mov dword [rsp], 2       ; obj 2
+    mov dword [rsp + 4], 0x00240000 ; len 36, opcode 0
+    mov dword [rsp + 8], r15d ; global name
+    mov dword [rsp + 12], 12 ; str len 12
+    mov dword [rsp + 16], 0x5F676478 ; "xdg_"
+    mov dword [rsp + 20], 0x625F6D77 ; "wm_b"
+    mov dword [rsp + 24], 0x00657361 ; "ase"
+    mov dword [rsp + 28], 1  ; version 1
+    mov dword [rsp + 32], 6  ; new_id = 6 (xdg_wm_base)
+    mov rdx, 36
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; STEP 3: Create Surface & XDG Objects
+    mov dword [rsp], 4
+    mov dword [rsp + 4], 0x000C0000 ; len 12, opcode 0
+    mov dword [rsp + 8], 7          ; new_id = 7 (wl_surface)
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    mov dword [rsp], 6
+    mov dword [rsp + 4], 0x00100002 ; len 16, opcode 2
+    mov dword [rsp + 8], 8          ; new_id = 8 (xdg_surface)
+    mov dword [rsp + 12], 7         ; surface = 7
+    mov rdx, 16
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    mov dword [rsp], 8
+    mov dword [rsp + 4], 0x000C0001 ; len 12, opcode 1
+    mov dword [rsp + 8], 9          ; new_id = 9 (xdg_toplevel)
+    mov rdx, 12
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; set_app_id on object 9 (opcode 3, "cap\0")
+    mov dword [rsp], 9
+    mov dword [rsp + 4], 0x00100003 ; len 16, opcode 3
+    mov dword [rsp + 8], 4          ; str len 4 (including NUL)
+    mov dword [rsp + 12], 0x00706163; "cap\0"
+    mov rdx, 16
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; STEP 4: Create Shared Memory Framebuffer
+    mov rsi, 0
+    mov byte [rsp + 200], 'c'
+    mov byte [rsp + 201], 'a'
+    mov byte [rsp + 202], 'p'
+    mov byte [rsp + 203], '_'
+    mov byte [rsp + 204], 's'
+    mov byte [rsp + 205], 'h'
+    mov byte [rsp + 206], 'm'
+    mov byte [rsp + 207], 0
+    lea rdi, [rsp + 200]
+    mov rax, 319             ; sys_memfd_create
+    syscall
+    test rax, rax
+    jns .got_shm_fd
+
+    mov rdx, 0600o
+    mov rsi, 0x202           ; O_RDWR | O_CREAT | O_TRUNC
+    mov byte [rsp + 200], '/'
+    mov byte [rsp + 201], 't'
+    mov byte [rsp + 202], 'm'
+    mov byte [rsp + 203], 'p'
+    mov byte [rsp + 204], '/'
+    mov byte [rsp + 205], 'c'
+    mov byte [rsp + 206], 'a'
+    mov byte [rsp + 207], 'p'
+    mov byte [rsp + 208], 0
+    lea rdi, [rsp + 200]
+    mov rax, 2               ; sys_open
+    syscall
+    test rax, rax
+    js .try_x11
+
+.got_shm_fd:
+    mov r12, qword [rsp + 2064]
+    mov r13, qword [rsp + 2072]
+    mov r15, rax             ; r15 = shm_fd
+
+    mov rsi, 320000
+    mov rdi, r15
+    mov rax, 77              ; sys_ftruncate
+    syscall
+
+    mov r9, 0                ; offset = 0
+    mov r8, r15              ; fd
+    mov r10, 1               ; MAP_SHARED
+    mov rdx, 3               ; PROT_READ | PROT_WRITE
+    mov rsi, 320000          ; len
+    mov rdi, 0               ; addr = NULL
+    mov rax, 9               ; sys_mmap
+    syscall
+    test rax, rax
+    js .try_x11
+    mov rbx, rax             ; rbx = framebuffer ptr
+
+    mov rcx, 80000
+    mov eax, 0xFFFFFFFF
+    mov rdi, rbx
+    rep stosd
+    cmp r13, 0
+    jle .render_done
+
+    mov rax, [r12 + 8]
+    cmp rax, 0
+    jle .bar1
+    imul rax, 40
+    cmp rax, 180
+    jle .b0_ok
+    mov rax, 180
+.b0_ok:
+    mov r8, 190
+    sub r8, rax
+    mov r9, 190
+.b0_y_loop:
+    cmp r8, r9
+    jge .bar1
+    mov r10, 50
+.b0_x_loop:
+    cmp r10, 110
+    jge .b0_next_y
+    mov rcx, r8
+    imul rcx, 400
+    add rcx, r10
+    mov dword [rbx + rcx * 4], 0xFF2060FF
+    inc r10
+    jmp .b0_x_loop
+.b0_next_y:
+    inc r8
+    jmp .b0_y_loop
+
+.bar1:
+    cmp r13, 1
+    jle .render_done
+    mov rax, [r12 + 24]
+    cmp rax, 0
+    jle .bar2
+    imul rax, 40
+    cmp rax, 180
+    jle .b1_ok
+    mov rax, 180
+.b1_ok:
+    mov r8, 190
+    sub r8, rax
+    mov r9, 190
+.b1_y_loop:
+    cmp r8, r9
+    jge .bar2
+    mov r10, 170
+.b1_x_loop:
+    cmp r10, 230
+    jge .b1_next_y
+    mov rcx, r8
+    imul rcx, 400
+    add rcx, r10
+    mov dword [rbx + rcx * 4], 0xFF2060FF
+    inc r10
+    jmp .b1_x_loop
+.b1_next_y:
+    inc r8
+    jmp .b1_y_loop
+
+.bar2:
+    cmp r13, 2
+    jle .render_done
+    mov rax, [r12 + 40]
+    cmp rax, 0
+    jle .render_done
+    imul rax, 40
+    cmp rax, 180
+    jle .b2_ok
+    mov rax, 180
+.b2_ok:
+    mov r8, 190
+    sub r8, rax
+    mov r9, 190
+.b2_y_loop:
+    cmp r8, r9
+    jge .render_done
+    mov r10, 290
+.b2_x_loop:
+    cmp r10, 350
+    jge .b2_next_y
+    mov rcx, r8
+    imul rcx, 400
+    add rcx, r10
+    mov dword [rbx + rcx * 4], 0xFF2060FF
+    inc r10
+    jmp .b2_x_loop
+.b2_next_y:
+    inc r8
+    jmp .b2_y_loop
+
+.render_done:
+    ; STEP 5: Send wl_shm.create_pool with SCM_RIGHTS
+    mov dword [rsp], 5       ; obj 5
+    mov dword [rsp + 4], 0x00100000 ; len 16, opcode 0
+    mov dword [rsp + 8], 10  ; new_id = 10 (wl_shm_pool)
+    mov dword [rsp + 12], 320000 ; size
+
+    lea rax, [rsp]
+    mov qword [rsp + 32], rax; iov_base
+    mov qword [rsp + 40], 16 ; iov_len
+
+    mov qword [rsp + 64], 20 ; CMSG_LEN(sizeof(int))
+    mov dword [rsp + 72], 1  ; SOL_SOCKET = 1
+    mov dword [rsp + 76], 1  ; SCM_RIGHTS = 1
+    mov eax, r15d
+    mov dword [rsp + 80], eax; fd
+
+    ; Linux x86-64 struct msghdr, placed at an aligned address.
+    mov qword [rsp + 160], 0 ; msg_name = NULL
+    mov dword [rsp + 168], 0 ; msg_namelen = 0
+    lea rax, [rsp + 32]
+    mov qword [rsp + 176], rax ; msg_iov
+    mov qword [rsp + 184], 1 ; msg_iovlen = 1
+    lea rax, [rsp + 64]
+    mov qword [rsp + 192], rax ; msg_control
+    mov qword [rsp + 200], 24 ; msg_controllen = 24
+    mov dword [rsp + 208], 0 ; msg_flags = 0
+
+    mov rdx, 0
+    lea rsi, [rsp + 160]
+    mov rdi, r14
+    mov rax, 46              ; sys_sendmsg
+    syscall
+
+    mov rdi, r15
+    mov rax, 3               ; sys_close
+    syscall
+
+    ; STEP 6: Create Buffer, Attach, Commit
+    mov dword [rsp], 10      ; obj 10
+    mov dword [rsp + 4], 0x00200000 ; len 32, opcode 0
+    mov dword [rsp + 8], 11  ; new_id = 11 (wl_buffer)
+    mov dword [rsp + 12], 0  ; offset = 0
+    mov dword [rsp + 16], 400; width = 400
+    mov dword [rsp + 20], 200; height = 200
+    mov dword [rsp + 24], 1600; stride = 1600
+    mov dword [rsp + 28], 0  ; format = 0
+    mov rdx, 32
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; Initial xdg_surface commit: no buffer attached yet.
+    mov dword [rsp], 7
+    mov dword [rsp + 4], 0x00080006 ; len 8, wl_surface.commit
+    mov rdx, 8
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; STEP 7: Read Events until xdg_surface.configure (max 64 events bound)
+    mov dword [rsp + 2012], 64
+
+.wl_event_loop:
+    dec dword [rsp + 2012]
+    jz .err_no_configure_bars
+
+    mov dword [rsp + 2016], r14d
+    mov word [rsp + 2020], 1
+    mov word [rsp + 2022], 0
+    lea rdi, [rsp + 2016]
+    mov rsi, 1
+    mov rdx, 1000
+    mov rax, 7               ; sys_poll
+    syscall
+    cmp rax, 0
+    jle .err_no_configure_bars
+
+    mov rdx, 8
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, 8
+    jl .err_no_configure_bars
+
+    mov ebx, dword [rsp]     ; sender obj id
+    mov ecx, dword [rsp + 4] ; (len << 16) | opcode
+    mov r15d, ecx
+    shr r15d, 16             ; total msg length
+    and ecx, 0xFFFF          ; opcode
+    mov dword [rsp + 2032], ecx ; Preserve opcode across syscall
+
+    sub r15d, 8
+    js .err_no_configure_bars
+    mov rdx, r15
+    mov rsi, rsp
+    mov rdi, r14
+    mov rax, 0               ; sys_read
+    syscall
+    cmp rax, r15
+    jl .err_no_configure_bars
+    mov ecx, dword [rsp + 2032] ; Restore opcode after syscall
+
+    cmp ebx, 1
+    jne .chk_wm_base_ping_bars
+    cmp ecx, 0
+    je .err_display_error_bars
+
+.chk_wm_base_ping_bars:
+    cmp ebx, 6
+    jne .chk_xdg_surf_evt
+    cmp ecx, 0
+    jne .chk_xdg_surf_evt
+
+    mov eax, dword [rsp]     ; ping serial
+    mov dword [rsp + 32], 6  ; obj 6
+    mov dword [rsp + 36], 0x000C0003 ; len 12, opcode 3
+    mov dword [rsp + 40], eax; serial
+    mov rdx, 12
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+    jmp .wl_event_loop
+
+.chk_xdg_surf_evt:
+    cmp ebx, 8
+    jne .wl_event_loop
+    cmp ecx, 0
+    jne .wl_event_loop
+
+    mov eax, dword [rsp]     ; configure serial
+
+    mov dword [rsp + 32], 8  ; obj 8
+    mov dword [rsp + 36], 0x000C0004 ; len 12, opcode 4
+    mov dword [rsp + 40], eax; serial
+    mov rdx, 12
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    ; Now that xdg_surface.configure has been acknowledged,
+    ; attach the buffer and commit the configured surface.
+    mov dword [rsp + 32], 7
+    mov dword [rsp + 36], 0x00140001 ; len 20, wl_surface.attach
+    mov dword [rsp + 40], 11 ; buffer ID
+    mov dword [rsp + 44], 0 ; x
+    mov dword [rsp + 48], 0 ; y
+    mov rdx, 20
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    mov dword [rsp + 32], 7
+    mov dword [rsp + 36], 0x00080006 ; len 8, wl_surface.commit
+    mov rdx, 8
+    lea rsi, [rsp + 32]
+    mov rdi, r14
+    mov rax, 1
+    syscall
+
+    jmp .win_do_sleep
+
+.win_do_sleep:
     mov qword [rsp], 2       ; tv_sec = 2
     mov qword [rsp + 8], 0   ; tv_nsec = 0
     mov rsi, 0
@@ -3139,12 +4259,11 @@ _stub_x86_bars:
     mov rax, 35              ; sys_nanosleep
     syscall
 
-    ; Close socket & return 0
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
 
-    add rsp, 2048
+    add rsp, 4096
     xor rax, rax             ; return 0
     mov rdx, 1               ; INT tag = 1
     pop r15
@@ -3159,7 +4278,7 @@ _stub_x86_bars:
     mov rdi, r14
     mov rax, 3               ; sys_close
     syscall
-    add rsp, 2048
+    add rsp, 4096
 
 .no_display:
     mov rdi, 2               ; STDERR
@@ -3171,4 +4290,7 @@ _stub_x86_bars:
     mov rax, 60              ; sys_exit
     syscall
 .no_display_msg: db "RuntimeError: cannot open display", 10
+.msg_missing_global_bars: db "wayland: missing global", 10
+.msg_display_error_bars: db "wayland: display error", 10
+.msg_no_configure_bars: db "wayland: no configure", 10
 _stub_x86_bars_end:
